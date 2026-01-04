@@ -1,0 +1,81 @@
+package me.toymail.zkemails.commands;
+
+import me.toymail.zkemails.ImapClient;
+import me.toymail.zkemails.ZkEmails;
+import me.toymail.zkemails.store.Config;
+import me.toymail.zkemails.store.ContactsStore;
+import me.toymail.zkemails.store.ZkStore;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
+
+import java.util.List;
+import java.util.Map;
+
+@Command(name = "ack", description = "Sync ACCEPT messages and store sender public keys for future encrypted communication.")
+public final class SyncAckCmd implements Runnable {
+
+    @Option(names="--password", required = true, interactive = true,
+            description = "App password / password (not saved)")
+    String password;
+
+    @Option(names="--limit", defaultValue = "200")
+    int limit;
+
+    @Override
+    public void run() {
+        try {
+            String profile = ZkEmails.getCurrentProfileDir();
+            if (profile == null) {
+                System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
+                return;
+            }
+            ZkStore store = new ZkStore(profile);
+            Config cfg = store.readJson("config.json", Config.class);
+            if (cfg == null) {
+                System.err.println("❌ Not initialized. Run: zkemails init ...");
+                return;
+            }
+
+            ContactsStore contacts = new ContactsStore(store);
+
+            int updated = 0;
+            try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
+                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
+            ))) {
+                List<ImapClient.MailSummary> accepts = imap.searchHeaderEquals("X-ZKEmails-Type", "accept", limit);
+                for (var m : accepts) {
+                    Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(m.uid());
+                    String fp = first(hdrs, "X-ZKEmails-Fingerprint");
+                    String ed = first(hdrs, "X-ZKEmails-PubKey-Ed25519");
+                    String x = first(hdrs, "X-ZKEmails-PubKey-X25519");
+
+                    String sender = extractEmail(m.from());
+                    if (sender == null) continue;
+                    if (fp == null || ed == null || x == null) continue;
+
+                    contacts.upsertKeys(sender, "ready", fp, ed, x);
+                    updated++;
+                }
+            }
+
+            System.out.println("✅ sync ack complete. Contacts updated: " + updated);
+        } catch (Exception e) {
+            System.err.println("❌ sync ack failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+        }
+    }
+
+    private static String first(Map<String, List<String>> hdrs, String key) {
+        List<String> v = hdrs.get(key);
+        return (v == null || v.isEmpty()) ? null : v.get(0);
+    }
+
+    private static String extractEmail(String fromHeader) {
+        if (fromHeader == null) return null;
+        int lt = fromHeader.indexOf('<');
+        int gt = fromHeader.indexOf('>');
+        if (lt >= 0 && gt > lt) return fromHeader.substring(lt + 1, gt).trim();
+        String s = fromHeader.trim();
+        if (s.contains("@") && !s.contains(" ")) return s;
+        return null;
+    }
+}
