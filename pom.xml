@@ -5,7 +5,7 @@
 
   <groupId>me.toymail</groupId>
   <artifactId>zkemails</artifactId>
-  <version>1.0.0</version>
+  <version>0.0.1.beta1</version>
 
   <properties>
     <maven.compiler.source>17</maven.compiler.source>
@@ -85,6 +85,43 @@
         <configuration>
           <mainClass>me.toymail.zkemails.CliMain</mainClass>
         </configuration>
+      </plugin>
+
+      <!-- Fat JAR with all dependencies -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.1</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <!-- Set main class in manifest -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>me.toymail.zkemails.CliMain</mainClass>
+                </transformer>
+                <!-- Merge META-INF/services files (for BouncyCastle, Mail providers) -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+              <shadedArtifactAttached>true</shadedArtifactAttached>
+              <shadedClassifierName>fat</shadedClassifierName>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
