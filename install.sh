@@ -338,7 +338,30 @@ setup_path() {
     fi
 
     if [[ $MODIFIED -eq 1 ]]; then
-        warn "Please restart your shell or run: source ~/.$(basename $SHELL)rc"
+        info "Reloading shell configuration to make zkemails available immediately..."
+
+        # Source the appropriate shell config file to make zkemails available now
+        case "$SHELL" in
+            */zsh)
+                if [[ -f "$HOME/.zshrc" ]]; then
+                    source "$HOME/.zshrc" 2>/dev/null || true
+                fi
+                ;;
+            */bash)
+                if [[ "$(uname)" == "Darwin" ]] && [[ -f "$HOME/.bash_profile" ]]; then
+                    source "$HOME/.bash_profile" 2>/dev/null || true
+                elif [[ -f "$HOME/.bashrc" ]]; then
+                    source "$HOME/.bashrc" 2>/dev/null || true
+                fi
+                ;;
+        esac
+
+        # Verify zkemails is now in PATH
+        if command -v zkemails >/dev/null 2>&1; then
+            info "zkemails command is now available!"
+        else
+            warn "Could not automatically reload PATH. Please restart your shell or run: source ~/.$(basename $SHELL)rc"
+        fi
     fi
 }
 
@@ -348,12 +371,22 @@ print_success() {
     echo ""
     echo "zkemails v$ZKEMAILS_VERSION has been installed to $BIN_DIR"
     echo ""
-    echo "To get started, restart your terminal or run:"
-    echo "  source ~/.$(basename $SHELL)rc"
-    echo ""
-    echo "Then try:"
-    echo "  zkemails --help"
-    echo "  zkemails init --email your@email.com --password"
+
+    # Check if zkemails is immediately available
+    if command -v zkemails >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ zkemails command is ready to use!${NC}"
+        echo ""
+        echo "Try it now:"
+        echo "  zkemails --help"
+        echo "  zkemails init --email your@email.com --password"
+    else
+        echo "To use zkemails, restart your terminal or run:"
+        echo "  source ~/.$(basename $SHELL)rc"
+        echo ""
+        echo "Then try:"
+        echo "  zkemails --help"
+        echo "  zkemails init --email your@email.com --password"
+    fi
     echo ""
 }
 
