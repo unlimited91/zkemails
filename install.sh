@@ -186,7 +186,8 @@ check_prerequisites() {
 
     # Validate that JAVA_VERSION is numeric
     if [[ ! "$JAVA_VERSION" =~ ^[0-9]+$ ]]; then
-        error "Could not determine Java version. Please ensure Java 17+ is installed correctly."
+        install_java_via_sdkman
+#        error "Could not determine Java version. Please ensure Java 17+ is installed correctly."
     fi
 
     if [[ "$JAVA_VERSION" -lt 17 ]]; then
