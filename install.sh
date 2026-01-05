@@ -86,7 +86,7 @@ install_java_via_sdkman() {
         echo ""
         echo "Would you like us to install Java 17?"
         echo "We will do it via an open source product called SDKMAN which is a version"
-        echo "manager and will allow you to upgrade or downgrade later."
+        echo "manager and will allow you to upgrade or downgrade later. If you want to do it manually, please select 'n' below and install Java 17+ yourself and ensure the java command on terminal reads version 17"
         echo ""
         read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r
         echo ""
@@ -172,32 +172,34 @@ check_prerequisites() {
         error "curl command exists but is not functioning properly. Please reinstall curl and try again."
     fi
 
-    # Check Java
+    # Check Java - not just if command exists, but if it actually works
     if ! check_command java; then
         install_java_via_sdkman
+    else
+        # Java command exists, but verify it actually works
+        JAVA_VERSION_TEST=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
+        if [[ ! "$JAVA_VERSION_TEST" =~ ^[0-9]+$ ]]; then
+            # Java command exists but doesn't return a valid version (likely a stub on macOS)
+            warn "Java command found but not functional. Installing Java via SDKMAN..."
+            install_java_via_sdkman
+        fi
     fi
 
-    # Check Java version - validate it exists and is numeric
-    if ! check_command java; then
-        error "Java installation failed or java command not found. Please install Java 17+ manually."
-    fi
 
     JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
 
     # Validate that JAVA_VERSION is numeric
     if [[ ! "$JAVA_VERSION" =~ ^[0-9]+$ ]]; then
-        echo "We are here!!!! This should print"
-        install_java_via_sdkman
-    # error "Could not determine Java version. Please ensure Java 17+ is installed correctly."
+        error "Could not determine Java version. Please ensure Java 17+ is installed correctly."
     fi
 
     if [[ "$JAVA_VERSION" -lt 17 ]]; then
         echo ""
         echo -e "${YELLOW}Java $JAVA_VERSION is installed but Java 17+ is required.${NC}"
         echo ""
-        echo "Would you like us to install Java 17?"
+        echo "If you have Java 17 please switch to that. In case you are not sure what to do, Would you like us to install Java 17?"
         echo "We will do it via an open source product called SDKMAN which is a version"
-        echo "manager and will allow you to upgrade or downgrade later."
+        echo "manager and will allow you to upgrade or downgrade later. If you want to do it manually, please select 'n' below and install Java 17+ yourself and ensure the java command on terminal reads version 17"
         echo ""
         read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r
         echo ""
