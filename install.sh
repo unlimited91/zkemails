@@ -88,7 +88,7 @@ install_java_via_sdkman() {
         echo "We will do it via an open source product called SDKMAN which is a version"
         echo "manager and will allow you to upgrade or downgrade later. If you want to do it manually, please select 'n' below and install Java 17+ yourself and ensure the java command on terminal reads version 17"
         echo ""
-        read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r
+        read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r </dev/tty
         echo ""
 
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -201,7 +201,7 @@ check_prerequisites() {
         echo "We will do it via an open source product called SDKMAN which is a version"
         echo "manager and will allow you to upgrade or downgrade later. If you want to do it manually, please select 'n' below and install Java 17+ yourself and ensure the java command on terminal reads version 17"
         echo ""
-        read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r
+        read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r </dev/tty
         echo ""
 
         if [[ $REPLY =~ ^[Yy]$ ]]; then
