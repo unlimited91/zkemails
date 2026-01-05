@@ -10,7 +10,7 @@ REPO="unlimited91/zkemails"
 INSTALL_DIR="$HOME/.zkemails"
 BIN_DIR="$INSTALL_DIR/bin"
 JAR_NAME="zkemails.jar"
-VERSION=""
+VERSION="0.0.1.beta1"
 
 # Colors for output
 RED='\033[0;31m'
