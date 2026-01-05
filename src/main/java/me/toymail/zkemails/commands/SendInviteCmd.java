@@ -31,13 +31,13 @@ public final class SendInviteCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                System.err.println("❌ Not initialized. Run: zkemails init ...");
+                System.err.println("Not initialized. Run: zkemails init ...");
                 return;
             }
 
             IdentityKeys.KeyBundle keys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
             if (keys == null) {
-                System.err.println("❌ Missing keys.json. Re-run init.");
+                System.err.println("Missing keys.json. Re-run init.");
                 return;
             }
 
@@ -45,11 +45,12 @@ public final class SendInviteCmd implements Runnable {
 
             try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
                 String inviteId = smtp.sendInvite(cfg.email, to, keys, context.invites());
-                System.out.println("✅ Sent invite to " + to + " inviteId=" + inviteId);
-                System.out.println("✅ Contact stored/updated in contacts.json (status=invited-out)");
+                System.out.println("Sent invite to " + to + " inviteId=" + inviteId);
+                System.out.println("Contact stored/updated in contacts.json (status=invited-out)");
+
             }
         } catch (Exception e) {
-            System.err.println("❌ send-invite failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            System.err.println("send-invite failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 }

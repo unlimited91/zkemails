@@ -52,7 +52,7 @@ public final class LsaInviCmd implements Runnable {
                         x.inviteId, x.fromEmail, created, x.status, x.subject);
             }
         } catch (Exception e) {
-            System.err.println("❌ lsa invi failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            System.err.println("lsa invi failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 }

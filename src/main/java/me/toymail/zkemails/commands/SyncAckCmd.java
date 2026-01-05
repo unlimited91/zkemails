@@ -33,7 +33,7 @@ public final class SyncAckCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                System.err.println("❌ Not initialized. Run: zkemails init ...");
+                System.err.println("Not initialized. Run: zkemails init ...");
                 return;
             }
 
@@ -57,9 +57,9 @@ public final class SyncAckCmd implements Runnable {
                 }
             }
 
-            System.out.println("✅ sync ack complete. Contacts updated: " + updated);
+            System.out.println("sync ack complete. Contacts updated: " + updated);
         } catch (Exception e) {
-            System.err.println("❌ sync ack failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            System.err.println("sync ack failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 
