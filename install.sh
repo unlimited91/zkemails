@@ -48,7 +48,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -v|--version)
-                ZKEMAILS_VERSION="$2"
+                VERSION="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -62,8 +62,10 @@ parse_args() {
 }
 
 check_command() {
-    command -v "$1" >/dev/null 2>&1
-    return $?
+    if ! command -v "$1" &> /dev/null; then
+        return 1
+    fi
+    return 0
 }
 
 install_java_via_sdkman() {
@@ -86,13 +88,13 @@ install_java_via_sdkman() {
         echo ""
         echo "Would you like us to install Java 17?"
         echo "We will do it via an open source product called SDKMAN which is a version"
-        echo "manager and will allow you to upgrade or downgrade later. If you want to do it manually, please select 'n' below and install Java 17+ yourself and ensure the java command on terminal reads version 17"
+        echo "manager and will allow you to upgrade or downgrade later."
         echo ""
-        read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r </dev/tty
+        read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r
         echo ""
 
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            error "Java 17+ is required to run zkemails. Installation cancelled. Please install Java 17+ manually and run this script again."
+            error "Java 17+ is required to run zkemails. Installation cancelled. Please install Java 17 manually and run this script again"
         fi
 
         info "Installing SDKMAN..."
@@ -110,9 +112,8 @@ install_java_via_sdkman() {
 
     # Check if Java 17 is already installed via SDKMAN before attempting installation
     if command -v java &> /dev/null; then
-        local current_java_version=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
-        # Validate that version is numeric before comparison
-        if [[ "$current_java_version" =~ ^[0-9]+$ ]] && [[ "$current_java_version" -ge 17 ]]; then
+        local current_java_version=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
+        if [[ "$current_java_version" -ge 17 ]]; then
             info "Java $current_java_version is already installed and satisfies the requirement"
             return 0
         fi
@@ -121,12 +122,12 @@ install_java_via_sdkman() {
     info "Installing Java 17 via SDKMAN..."
     # Install Java 17 LTS from Eclipse Temurin (Adoptium)
     # Try different identifier formats that SDKMAN supports:
-    # - Specific version (e.g., 17.0.17-tem) - known working version
-    # - Generic short form (e.g., 17-tem) - lets SDKMAN pick latest 17.x
+    # - Short form (e.g., 17-tem) - lets SDKMAN pick latest 17.x
+    # - Medium form (e.g., 17.0-tem) - more specific
     # If these fail, we'll show available versions
 
-    if ! sdk install java 17.0.17-tem 2>/dev/null; then
-        if ! sdk install java 17-tem 2>/dev/null; then
+    if ! sdk install java 17-tem 2>/dev/null; then
+        if ! sdk install java 17.0-tem 2>/dev/null; then
             echo ""
             warn "Could not install using generic identifiers. Available Java 17 versions:"
             sdk list java | grep -E "17\..*tem" | head -10 || echo "  (Could not list versions)"
@@ -142,17 +143,7 @@ install_java_via_sdkman() {
         error "Java installation completed but java command not found. Please restart your shell and try again."
     fi
 
-    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
-
-    # Validate version is numeric and >= 17
-    if [[ ! "$JAVA_VERSION" =~ ^[0-9]+$ ]]; then
-        error "Java installation completed but could not verify version. Please check your installation."
-    fi
-
-    if [[ "$JAVA_VERSION" -lt 17 ]]; then
-        error "Java $JAVA_VERSION was installed but Java 17+ is required. Please try installing a newer version."
-    fi
-
+    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
     info "Java $JAVA_VERSION installed successfully"
     echo ""
     echo -e "${GREEN}Note:${NC} After installation completes, you may need to restart your shell"
@@ -168,52 +159,30 @@ check_prerequisites() {
         error "curl is required but not installed. Please install curl and try again."
     fi
 
-    # Verify curl actually works by checking its version
-    if ! curl --version >/dev/null 2>&1; then
-        error "curl command exists but is not functioning properly. Please reinstall curl and try again."
-    fi
-
-    # Check Java - not just if command exists, but if it actually works
+    # Check Java
     if ! check_command java; then
         install_java_via_sdkman
-    else
-        # Java command exists, but verify it actually works
-        JAVA_VERSION_TEST=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
-        if [[ ! "$JAVA_VERSION_TEST" =~ ^[0-9]+$ ]]; then
-            # Java command exists but doesn't return a valid version (likely a stub on macOS)
-            warn "Java command found but not functional. Installing Java via SDKMAN..."
-            install_java_via_sdkman
-        fi
     fi
 
-
-    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
-
-    # Validate that JAVA_VERSION is numeric
-    if [[ ! "$JAVA_VERSION" =~ ^[0-9]+$ ]]; then
-        error "Could not determine Java version. Please ensure Java 17+ is installed correctly."
-    fi
-
+    # Check Java version
+    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
     if [[ "$JAVA_VERSION" -lt 17 ]]; then
         echo ""
         echo -e "${YELLOW}Java $JAVA_VERSION is installed but Java 17+ is required.${NC}"
         echo ""
-        echo "If you have Java 17 please switch to that. In case you are not sure what to do, Would you like us to install Java 17?"
+        echo "Would you like us to install Java 17?"
         echo "We will do it via an open source product called SDKMAN which is a version"
-        echo "manager and will allow you to upgrade or downgrade later. If you want to do it manually, please select 'n' below and install Java 17+ yourself and ensure the java command on terminal reads version 17"
+        echo "manager and will allow you to upgrade or downgrade later."
         echo ""
-        read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r </dev/tty
+        read -p "Install Java 17 via SDKMAN? (y/n): " -n 1 -r
         echo ""
 
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             install_java_via_sdkman
             # Re-check version after installation
-            if ! check_command java; then
-                error "Java installation failed or java command not found. Please install Java 17+ manually."
-            fi
-            JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
-            if [[ ! "$JAVA_VERSION" =~ ^[0-9]+$ ]] || [[ "$JAVA_VERSION" -lt 17 ]]; then
-                error "Java 17+ is required. Installation or verification failed. Please check your setup."
+            JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
+            if [[ "$JAVA_VERSION" -lt 17 ]]; then
+                error "Java 17+ is required. Found Java $JAVA_VERSION after installation. Please check your setup."
             fi
         else
             error "Java 17+ is required. Found Java $JAVA_VERSION. Please upgrade Java and try again."
@@ -235,30 +204,30 @@ get_latest_version() {
         error "Failed to fetch latest release. Check your internet connection or specify a version with -v."
     fi
 
-    ZKEMAILS_VERSION="$LATEST"
-    info "Latest version: $ZKEMAILS_VERSION"
+    VERSION="$LATEST"
+    info "Latest version: $VERSION"
 }
 
 download_jar() {
-    info "Downloading zkemails v$ZKEMAILS_VERSION..."
+    info "Downloading zkemails v$VERSION..."
 
     mkdir -p "$BIN_DIR"
 
     # Construct download URL - assuming release asset is named zkemails-<version>-fat.jar
-    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$ZKEMAILS_VERSION/zkemails-$ZKEMAILS_VERSION-fat.jar"
+    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/zkemails-$VERSION-fat.jar"
 
     # Try downloading
     HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$BIN_DIR/$JAR_NAME" "$DOWNLOAD_URL" 2>/dev/null || echo "000")
 
     if [[ "$HTTP_CODE" != "200" ]]; then
         # Try alternate naming pattern (without version in filename)
-        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$ZKEMAILS_VERSION/zkemails-fat.jar"
+        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/zkemails-fat.jar"
         HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$BIN_DIR/$JAR_NAME" "$DOWNLOAD_URL" 2>/dev/null || echo "000")
     fi
 
     if [[ "$HTTP_CODE" != "200" ]]; then
         rm -f "$BIN_DIR/$JAR_NAME"
-        error "Failed to download release v$ZKEMAILS_VERSION. HTTP status: $HTTP_CODE. Please verify the version exists."
+        error "Failed to download release v$VERSION. HTTP status: $HTTP_CODE. Please verify the version exists."
     fi
 
     info "Downloaded to $BIN_DIR/$JAR_NAME"
@@ -339,17 +308,7 @@ setup_path() {
     fi
 
     if [[ $MODIFIED -eq 1 ]]; then
-        info "Making zkemails available in current session..."
-
-        # Add to current session's PATH immediately
-        export PATH="$BIN_DIR:$PATH"
-
-        # Verify zkemails is now available
-        if command -v zkemails >/dev/null 2>&1; then
-            info "zkemails command is now available!"
-        else
-            warn "Could not add zkemails to PATH. Please restart your shell or run: source ~/.$(basename $SHELL)rc"
-        fi
+        warn "Please restart your shell or run: source ~/.$(basename $SHELL)rc"
     fi
 }
 
@@ -357,24 +316,14 @@ print_success() {
     echo ""
     echo -e "${GREEN}Installation complete!${NC}"
     echo ""
-    echo "zkemails v$ZKEMAILS_VERSION has been installed to $BIN_DIR"
+    echo "zkemails v$VERSION has been installed to $BIN_DIR"
     echo ""
-
-    # Check if zkemails is immediately available
-    if command -v zkemails >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ zkemails command is ready to use!${NC}"
-        echo ""
-        echo "Try it now:"
-        echo "  zkemails --help"
-        echo "  zkemails init --email your@email.com --password"
-    else
-        echo "To use zkemails, restart your terminal or run:"
-        echo "  source ~/.$(basename $SHELL)rc"
-        echo ""
-        echo "Then try:"
-        echo "  zkemails --help"
-        echo "  zkemails init --email your@email.com --password"
-    fi
+    echo "To get started, restart your terminal or run:"
+    echo "  source ~/.$(basename $SHELL)rc"
+    echo ""
+    echo "Then try:"
+    echo "  zkemails --help"
+    echo "  zkemails init --email your@email.com --password"
     echo ""
 }
 
@@ -388,10 +337,10 @@ main() {
     parse_args "$@"
     check_prerequisites
 
-    if [[ -z "$ZKEMAILS_VERSION" ]]; then
+    if [[ -z "$VERSION" ]]; then
         get_latest_version
     else
-        info "Installing specified version: $ZKEMAILS_VERSION"
+        info "Installing specified version: $VERSION"
     fi
 
     download_jar
