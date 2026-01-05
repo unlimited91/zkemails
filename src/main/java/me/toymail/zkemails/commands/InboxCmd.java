@@ -38,7 +38,7 @@ public final class InboxCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                System.err.println("❌ Not initialized. Run: zkemails init ...");
+                System.err.println("Not initialized. Run: zkemails init ...");
                 return;
             }
 
@@ -58,7 +58,7 @@ public final class InboxCmd implements Runnable {
                 }
             }
         } catch (Exception e) {
-            System.err.println("❌ inbox failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            System.err.println("inbox failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 }

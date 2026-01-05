@@ -35,13 +35,13 @@ public final class AckInviCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                System.err.println("❌ Not initialized. Run: zkemails init ...");
+                System.err.println("Not initialized. Run: zkemails init ...");
                 return;
             }
 
             IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
             if (myKeys == null) {
-                System.err.println("❌ Missing keys.json. Re-run init.");
+                System.err.println("Missing keys.json. Re-run init.");
                 return;
             }
 
@@ -56,7 +56,7 @@ public final class AckInviCmd implements Runnable {
             ))) {
                 List<ImapClient.MailSummary> matches = imap.searchHeaderEquals("X-ZKEmails-Invite-Id", inviteId, 50);
                 if (matches.isEmpty()) {
-                    System.err.println("❌ No email found with invite-id=" + inviteId);
+                    System.err.println("No email found with invite-id=" + inviteId);
                     return;
                 }
 
@@ -86,11 +86,11 @@ public final class AckInviCmd implements Runnable {
                 inviterXPub = first(chosenHdrs, "X-ZKEmails-PubKey-X25519");
 
                 if (inviterEmail == null) {
-                    System.err.println("❌ Could not parse inviter email from: " + chosen.from());
+                    System.err.println("Could not parse inviter email from: " + chosen.from());
                     return;
                 }
                 if (inviterFp == null || inviterEdPub == null || inviterXPub == null) {
-                    System.err.println("❌ Invite missing key headers from inviter (Fingerprint/Ed25519/X25519).");
+                    System.err.println("Invite missing key headers from inviter (Fingerprint/Ed25519/X25519).");
                     return;
                 }
 
@@ -98,19 +98,19 @@ public final class AckInviCmd implements Runnable {
             }
 
             context.contacts().upsertKeys(inviterEmail, "ready", inviterFp, inviterEdPub, inviterXPub);
-            System.out.println("✅ Stored inviter keys in contacts.json (TOFU pin).");
+            System.out.println("Stored inviter keys in contacts.json (TOFU pin).");
 
             try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
                 smtp.sendAcceptWithKeys(cfg.email, inviterEmail, inviteId,
                         myKeys.fingerprintHex(), myKeys.ed25519PublicB64(), myKeys.x25519PublicB64());
             }
-            System.out.println("✅ Sent ACCEPT to " + inviterEmail + " (your keys gossiped).");
+            System.out.println("Sent ACCEPT to " + inviterEmail + " (your keys gossiped).");
 
             context.invites().ensureIncoming(inviteId, inviterEmail, cfg.email, subject);
             context.invites().markIncomingAcked(inviteId);
-            System.out.println("✅ Marked invite as acked locally (invites.json)");
+            System.out.println("Marked invite as acked locally (invites.json)");
         } catch (Exception e) {
-            System.err.println("❌ ack invi failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            System.err.println("Ack invi failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 

@@ -42,7 +42,7 @@ public class ProfileCmd implements Runnable {
                     if (p.equals(def)) {
                         System.out.println("* " + p + " (default)");
                     } else {
-                        System.out.println("  " + p);
+                        System.out.println(" " + p);
                     }
                 }
             } catch (Exception e) {

@@ -75,17 +75,17 @@ public final class InitCmd implements Runnable {
             if (!store.exists("keys.json")) {
                 var keys = IdentityKeys.generate();
                 store.writeJson("keys.json", keys);
-                System.out.println("✅ Auth OK. Wrote config.json and generated keys.json in " + store.baseDir());
+                System.out.println("Auth OK. Wrote config.json and generated keys.json in " + store.baseDir());
             } else {
-                System.out.println("✅ Auth OK. Wrote config.json. keys.json already exists in " + store.baseDir());
+                System.out.println("Auth OK. Wrote config.json. keys.json already exists in " + store.baseDir());
             }
 
             // Update profile config and switch to new profile
             context.addAndSwitchProfile(email);
-            System.out.println("✅ Set " + email + " as default profile");
+            System.out.println("Set " + email + " as default profile");
 
         } catch (Exception e) {
-            System.err.println("❌ init failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            System.err.println("init failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 }

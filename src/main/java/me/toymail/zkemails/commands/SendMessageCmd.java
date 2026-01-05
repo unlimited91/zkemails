@@ -38,19 +38,19 @@ public final class SendMessageCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                System.err.println("❌ Not initialized. Run: zkemails init ...");
+                System.err.println("Not initialized. Run: zkemails init ...");
                 return;
             }
 
             IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
             if (myKeys == null) {
-                System.err.println("❌ Missing keys.json. Re-run init.");
+                System.err.println("Missing keys.json. Re-run init.");
                 return;
             }
 
             ContactsStore.Contact c = context.contacts().get(to);
             if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
-                System.err.println("❌ No pinned X25519 key for contact: " + to);
+                System.err.println("No pinned X25519 key for contact: " + to);
                 System.err.println("Run: zkemails sync ack --password   (or ack invi if they invited you).");
                 return;
             }
@@ -59,9 +59,9 @@ public final class SendMessageCmd implements Runnable {
                 smtp.sendEncryptedMessage(cfg.email, to, subject, body, myKeys, c.fingerprintHex, c.x25519PublicB64);
             }
 
-            System.out.println("✅ Encrypted message sent to " + to + " (type=msg)");
+            System.out.println("Encrypted message sent to " + to + " (type=msg)");
         } catch (Exception e) {
-            System.err.println("❌ send-message failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            System.err.println("send-message failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 }

@@ -41,15 +41,15 @@ public class ReadEncryptedMessageCmd implements Runnable {
             cfg = context.zkStore().readJson("config.json", Config.class);
             myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
         } catch (IOException e) {
-            System.err.println("❌ Error reading config or keys: " + e.getMessage());
+            System.err.println("Error reading config or keys: " + e.getMessage());
             return;
         }
         if (cfg == null) {
-            System.err.println("❌ Not initialized. Run: zkemails init ...");
+            System.err.println("Not initialized. Run: zkemails init ...");
             return;
         }
         if (myKeys == null) {
-            System.err.println("❌ Missing keys.json. Re-run init.");
+            System.err.println("Missing keys.json. Re-run init.");
             return;
         }
         try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password))) {
@@ -109,14 +109,14 @@ public class ReadEncryptedMessageCmd implements Runnable {
 //                for (var entry : required.entrySet()) {
 //                    String val = entry.getValue();
 //                    if (val == null || val.trim().isEmpty()) {
-//                        System.err.println("❌ Missing or empty header: " + entry.getKey() + " (value='" + val + "')");
+//                        System.err.println("Missing or empty header: " + entry.getKey() + " (value='" + val + "')");
 //                        missing = true;
 //                    }
 //                }
 //                if (missing) {
 //                    System.err.println("Available headers:");
 //                    for (var k : foundHdrs.keySet()) {
-//                        System.err.println("  " + k + ": " + foundHdrs.get(k));
+//                        System.err.println(" " + k + ": " + foundHdrs.get(k));
 //                    }
 //                    return;
 //                }
@@ -139,11 +139,11 @@ public class ReadEncryptedMessageCmd implements Runnable {
                     );
                     System.out.println("Decrypted message:\n" + plaintext);
                 } catch (Exception e) {
-                    System.err.println("❌ Decryption failed: " + e.getMessage());
+                    System.err.println("Decryption failed: " + e.getMessage());
                 }
             }
         } catch (Exception e) {
-            System.err.println("❌ Error: " + e.getMessage());
+            System.err.println("Error: " + e.getMessage());
         }
     }
 
