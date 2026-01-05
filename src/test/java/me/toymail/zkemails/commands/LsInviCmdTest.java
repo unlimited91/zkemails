@@ -20,10 +20,9 @@ public class LsInviCmdTest extends CommandTestBase {
         InviteStore invites = new InviteStore(store);
         invites.ensureIncoming("inv123", "sender@example.com", "test@example.com", "Subject");
 
-        System.err.println("Invites file exists: " + java.nio.file.Files.exists(store.path("invites.json")));
-        System.err.println("Invites content: " + java.nio.file.Files.readString(store.path("invites.json")));
+        reinitializeContext();
 
-        LsInviCmd cmd = new LsInviCmd();
+        LsInviCmd cmd = new LsInviCmd(context);
         cmd.limit = 50;
 
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
@@ -31,7 +30,6 @@ public class LsInviCmdTest extends CommandTestBase {
 
         cmd.run();
 
-        System.err.println("STDOUT (LsInvi): " + outContent.toString());
         assertTrue(outContent.toString().contains("inv123"));
         assertTrue(outContent.toString().contains("sender@example.com"));
     }
@@ -46,7 +44,9 @@ public class LsInviCmdTest extends CommandTestBase {
         invites.ensureIncoming("inv123", "sender@example.com", "test@example.com", "Subject");
         invites.markIncomingAcked("inv123");
 
-        LsaInviCmd cmd = new LsaInviCmd();
+        reinitializeContext();
+
+        LsaInviCmd cmd = new LsaInviCmd(context);
         cmd.limit = 50;
 
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();

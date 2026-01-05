@@ -14,13 +14,13 @@ public class ProfileCmdTest extends CommandTestBase {
 
     @Test
     public void testProfileLs_NoProfiles() {
-        ProfileCmd.Ls cmd = new ProfileCmd.Ls();
+        ProfileCmd cmd = new ProfileCmd(context);
 
         // Capture stdout
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
         System.setOut(new PrintStream(outContent));
 
-        cmd.run();
+        executeCommand(cmd, "ls");
 
         assertTrue(outContent.toString().contains("No profiles found"));
     }
@@ -34,13 +34,14 @@ public class ProfileCmdTest extends CommandTestBase {
                 tempDir.resolve(".zkemails").resolve("profile.config"),
                 "{\"profiles\":[\"test@example.com\"],\"default\":\"test@example.com\"}"
         );
+        reinitializeContext();
 
-        ProfileCmd.Ls cmd = new ProfileCmd.Ls();
+        ProfileCmd cmd = new ProfileCmd(context);
 
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
         System.setOut(new PrintStream(outContent));
 
-        cmd.run();
+        executeCommand(cmd, "ls");
 
         assertTrue(outContent.toString().contains("* test@example.com"));
     }
@@ -50,19 +51,20 @@ public class ProfileCmdTest extends CommandTestBase {
         // Setup profile config
         ZkStore store = new ZkStore("test@example.com");
         store.ensure();
+        ZkStore store2 = new ZkStore("other@example.com");
+        store2.ensure();
         java.nio.file.Files.writeString(
                 tempDir.resolve(".zkemails").resolve("profile.config"),
                 "{\"profiles\":[\"test@example.com\",\"other@example.com\"],\"default\":\"test@example.com\"}"
         );
+        reinitializeContext();
 
-        ProfileCmd.Use cmd = new ProfileCmd.Use();
-        cmd.profileId = "other@example.com";
+        ProfileCmd cmd = new ProfileCmd(context);
 
-        cmd.run();
+        executeCommand(cmd, "set", "other@example.com");
 
         // Verify current profile changed
         String content = java.nio.file.Files.readString(tempDir.resolve(".zkemails").resolve("profile.config"));
-        System.err.println("Profile config content: " + content);
 
         ObjectMapper mapper = new ObjectMapper();
         Map<String, Object> map = mapper.readValue(content, Map.class);

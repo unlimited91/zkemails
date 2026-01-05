@@ -16,12 +16,13 @@ public class SendInviteCmdTest extends CommandTestBase {
     @Test
     public void testSendInvite_Success() throws Exception {
         setupInitializedProfile("sender@example.com");
+        reinitializeContext();
 
         try (MockedStatic<SmtpClient> mockedSmtp = mockStatic(SmtpClient.class)) {
             SmtpClient smtp = mock(SmtpClient.class);
             mockedSmtp.when(() -> SmtpClient.connect(any())).thenReturn(smtp);
 
-            SendInviteCmd cmd = new SendInviteCmd();
+            SendInviteCmd cmd = new SendInviteCmd(context);
             cmd.password = "pass";
             cmd.to = "recipient@example.com";
 

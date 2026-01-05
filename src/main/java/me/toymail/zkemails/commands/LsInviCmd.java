@@ -1,12 +1,10 @@
 package me.toymail.zkemails.commands;
 
-import me.toymail.zkemails.ZkEmails;
 import me.toymail.zkemails.store.InviteStore;
-import me.toymail.zkemails.store.ZkStore;
+import me.toymail.zkemails.store.StoreContext;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -14,6 +12,11 @@ import java.util.List;
 
 @Command(name = "invi", description = "List incoming invites pending acknowledgement (local; no IMAP).")
 public final class LsInviCmd implements Runnable {
+    private final StoreContext context;
+
+    public LsInviCmd(StoreContext context) {
+        this.context = context;
+    }
 
     @Option(names="--limit", defaultValue = "50")
     int limit;
@@ -21,16 +24,13 @@ public final class LsInviCmd implements Runnable {
     @Override
     public void run() {
         try {
-            String profile = ZkEmails.getCurrentProfileDir();
-            if (profile == null) {
+            if (!context.hasActiveProfile()) {
                 System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
                 return;
             }
-            ZkStore store = new ZkStore(profile);
-            store.ensure();
-            InviteStore inv = new InviteStore(store);
+            context.zkStore().ensure();
 
-            List<InviteStore.Invite> pending = inv.listIncoming(true);
+            List<InviteStore.Invite> pending = context.invites().listIncoming(true);
 
             if (pending.isEmpty()) {
                 System.out.println("(no pending incoming invites found locally)");

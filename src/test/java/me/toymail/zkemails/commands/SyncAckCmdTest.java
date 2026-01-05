@@ -33,7 +33,9 @@ public class SyncAckCmdTest extends CommandTestBase {
             headers.put("X-ZKEmails-PubKey-X25519", List.of("x123"));
             when(imap.fetchAllHeadersByUid(100)).thenReturn(headers);
 
-            SyncAckCmd cmd = new SyncAckCmd();
+            reinitializeContext();
+
+            SyncAckCmd cmd = new SyncAckCmd(context);
             cmd.password = "pass";
 
             cmd.run();

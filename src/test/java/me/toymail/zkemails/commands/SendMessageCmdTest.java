@@ -24,11 +24,13 @@ public class SendMessageCmdTest extends CommandTestBase {
         IdentityKeys.KeyBundle recipientKeys = IdentityKeys.generate();
         contacts.upsertKeys("recipient@example.com", "verified", recipientKeys.fingerprintHex(), recipientKeys.ed25519PublicB64(), recipientKeys.x25519PublicB64());
 
+        reinitializeContext();
+
         try (MockedStatic<SmtpClient> mockedSmtp = mockStatic(SmtpClient.class)) {
             SmtpClient smtp = mock(SmtpClient.class);
             mockedSmtp.when(() -> SmtpClient.connect(any())).thenReturn(smtp);
 
-            SendMessageCmd cmd = new SendMessageCmd();
+            SendMessageCmd cmd = new SendMessageCmd(context);
             cmd.password = "pass";
             cmd.to = "recipient@example.com";
             cmd.subject = "Hello";
@@ -51,8 +53,9 @@ public class SendMessageCmdTest extends CommandTestBase {
     @Test
     public void testSendMessage_ContactNotFound() throws Exception {
         setupInitializedProfile("sender@example.com");
+        reinitializeContext();
 
-        SendMessageCmd cmd = new SendMessageCmd();
+        SendMessageCmd cmd = new SendMessageCmd(context);
         cmd.password = "pass";
         cmd.to = "unknown@example.com";
         cmd.subject = "Hello";
