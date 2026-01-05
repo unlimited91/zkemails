@@ -232,18 +232,18 @@ test_parse_args_version() {
     test_start "parse_args() correctly parses --version"
     source_install_functions
 
-    VERSION=""
+    ZKEMAILS_VERSION=""
     parse_args "--version" "1.2.3" 2>/dev/null || true
-    assert_equals "1.2.3" "$VERSION" "parse_args sets VERSION"
+    assert_equals "1.2.3" "$ZKEMAILS_VERSION" "parse_args sets ZKEMAILS_VERSION"
 }
 
 test_parse_args_version_short() {
     test_start "parse_args() correctly parses -v"
     source_install_functions
 
-    VERSION=""
+    ZKEMAILS_VERSION=""
     parse_args "-v" "2.0.0" 2>/dev/null || true
-    assert_equals "2.0.0" "$VERSION" "parse_args sets VERSION with -v"
+    assert_equals "2.0.0" "$ZKEMAILS_VERSION" "parse_args sets ZKEMAILS_VERSION with -v"
 }
 
 # ====================
@@ -401,7 +401,7 @@ test_download_url_patterns() {
     test_start "Download URL supports multiple patterns"
 
     local content=$(cat "$TEST_INSTALL_SCRIPT")
-    assert_contains "$content" "zkemails-\$VERSION-fat.jar" "Supports versioned JAR name"
+    assert_contains "$content" "zkemails-\$ZKEMAILS_VERSION-fat.jar" "Supports versioned JAR name"
     assert_contains "$content" "zkemails-fat.jar" "Supports alternate JAR name"
 }
 
@@ -568,7 +568,7 @@ test_version_parameter_handling() {
     local content=$(cat "$TEST_INSTALL_SCRIPT")
     assert_contains "$content" "--version" "Accepts --version flag"
     assert_contains "$content" "parse_args" "Has parse_args function"
-    assert_contains "$content" "VERSION=" "Sets VERSION variable"
+    assert_contains "$content" "ZKEMAILS_VERSION=" "Sets ZKEMAILS_VERSION variable"
 }
 
 # Test curl silent mode
@@ -585,7 +585,7 @@ test_java_installation_fallback() {
     test_start "Script has fallback for Java installation"
 
     local content=$(cat "$TEST_INSTALL_SCRIPT")
-    assert_contains "$content" "17.0-tem" "Has fallback Java identifier"
+    assert_contains "$content" "17-tem" "Has fallback Java identifier"
     assert_contains "$content" "Failed to install Java 17" "Shows installation failure message"
 }
 

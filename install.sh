@@ -10,7 +10,7 @@ REPO="unlimited91/zkemails"
 INSTALL_DIR="$HOME/.zkemails"
 BIN_DIR="$INSTALL_DIR/bin"
 JAR_NAME="zkemails.jar"
-VERSION="0.0.1.beta1"
+ZKEMAILS_VERSION="0.0.1.beta1"
 
 # Colors for output
 RED='\033[0;31m'
@@ -48,7 +48,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -v|--version)
-                VERSION="$2"
+                ZKEMAILS_VERSION="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -120,12 +120,12 @@ install_java_via_sdkman() {
     info "Installing Java 17 via SDKMAN..."
     # Install Java 17 LTS from Eclipse Temurin (Adoptium)
     # Try different identifier formats that SDKMAN supports:
-    # - Short form (e.g., 17-tem) - lets SDKMAN pick latest 17.x
-    # - Medium form (e.g., 17.0-tem) - more specific
+    # - Specific version (e.g., 17.0.17-tem) - known working version
+    # - Generic short form (e.g., 17-tem) - lets SDKMAN pick latest 17.x
     # If these fail, we'll show available versions
 
     if ! sdk install java 17.0.17-tem 2>/dev/null; then
-        if ! sdk install java 17.0.17-tem 2>/dev/null; then
+        if ! sdk install java 17-tem 2>/dev/null; then
             echo ""
             warn "Could not install using generic identifiers. Available Java 17 versions:"
             sdk list java | grep -E "17\..*tem" | head -10 || echo "  (Could not list versions)"
@@ -234,30 +234,30 @@ get_latest_version() {
         error "Failed to fetch latest release. Check your internet connection or specify a version with -v."
     fi
 
-    VERSION="$LATEST"
-    info "Latest version: $VERSION"
+    ZKEMAILS_VERSION="$LATEST"
+    info "Latest version: $ZKEMAILS_VERSION"
 }
 
 download_jar() {
-    info "Downloading zkemails v$VERSION..."
+    info "Downloading zkemails v$ZKEMAILS_VERSION..."
 
     mkdir -p "$BIN_DIR"
 
     # Construct download URL - assuming release asset is named zkemails-<version>-fat.jar
-    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/zkemails-$VERSION-fat.jar"
+    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$ZKEMAILS_VERSION/zkemails-$ZKEMAILS_VERSION-fat.jar"
 
     # Try downloading
     HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$BIN_DIR/$JAR_NAME" "$DOWNLOAD_URL" 2>/dev/null || echo "000")
 
     if [[ "$HTTP_CODE" != "200" ]]; then
         # Try alternate naming pattern (without version in filename)
-        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/zkemails-fat.jar"
+        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$ZKEMAILS_VERSION/zkemails-fat.jar"
         HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$BIN_DIR/$JAR_NAME" "$DOWNLOAD_URL" 2>/dev/null || echo "000")
     fi
 
     if [[ "$HTTP_CODE" != "200" ]]; then
         rm -f "$BIN_DIR/$JAR_NAME"
-        error "Failed to download release v$VERSION. HTTP status: $HTTP_CODE. Please verify the version exists."
+        error "Failed to download release v$ZKEMAILS_VERSION. HTTP status: $HTTP_CODE. Please verify the version exists."
     fi
 
     info "Downloaded to $BIN_DIR/$JAR_NAME"
@@ -346,7 +346,7 @@ print_success() {
     echo ""
     echo -e "${GREEN}Installation complete!${NC}"
     echo ""
-    echo "zkemails v$VERSION has been installed to $BIN_DIR"
+    echo "zkemails v$ZKEMAILS_VERSION has been installed to $BIN_DIR"
     echo ""
     echo "To get started, restart your terminal or run:"
     echo "  source ~/.$(basename $SHELL)rc"
@@ -367,10 +367,10 @@ main() {
     parse_args "$@"
     check_prerequisites
 
-    if [[ -z "$VERSION" ]]; then
+    if [[ -z "$ZKEMAILS_VERSION" ]]; then
         get_latest_version
     else
-        info "Installing specified version: $VERSION"
+        info "Installing specified version: $ZKEMAILS_VERSION"
     fi
 
     download_jar
