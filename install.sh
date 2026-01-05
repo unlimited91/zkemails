@@ -110,8 +110,9 @@ install_java_via_sdkman() {
 
     # Check if Java 17 is already installed via SDKMAN before attempting installation
     if command -v java &> /dev/null; then
-        local current_java_version=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
-        if [[ "$current_java_version" -ge 17 ]]; then
+        local current_java_version=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
+        # Validate that version is numeric before comparison
+        if [[ "$current_java_version" =~ ^[0-9]+$ ]] && [[ "$current_java_version" -ge 17 ]]; then
             info "Java $current_java_version is already installed and satisfies the requirement"
             return 0
         fi
@@ -338,29 +339,16 @@ setup_path() {
     fi
 
     if [[ $MODIFIED -eq 1 ]]; then
-        info "Reloading shell configuration to make zkemails available immediately..."
+        info "Making zkemails available in current session..."
 
-        # Source the appropriate shell config file to make zkemails available now
-        case "$SHELL" in
-            */zsh)
-                if [[ -f "$HOME/.zshrc" ]]; then
-                    source "$HOME/.zshrc" 2>/dev/null || true
-                fi
-                ;;
-            */bash)
-                if [[ "$(uname)" == "Darwin" ]] && [[ -f "$HOME/.bash_profile" ]]; then
-                    source "$HOME/.bash_profile" 2>/dev/null || true
-                elif [[ -f "$HOME/.bashrc" ]]; then
-                    source "$HOME/.bashrc" 2>/dev/null || true
-                fi
-                ;;
-        esac
+        # Add to current session's PATH immediately
+        export PATH="$BIN_DIR:$PATH"
 
-        # Verify zkemails is now in PATH
+        # Verify zkemails is now available
         if command -v zkemails >/dev/null 2>&1; then
             info "zkemails command is now available!"
         else
-            warn "Could not automatically reload PATH. Please restart your shell or run: source ~/.$(basename $SHELL)rc"
+            warn "Could not add zkemails to PATH. Please restart your shell or run: source ~/.$(basename $SHELL)rc"
         fi
     fi
 }
