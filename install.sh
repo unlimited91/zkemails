@@ -124,8 +124,8 @@ install_java_via_sdkman() {
     # - Medium form (e.g., 17.0-tem) - more specific
     # If these fail, we'll show available versions
 
-    if ! sdk install java 17-tem 2>/dev/null; then
-        if ! sdk install java 17.0-tem 2>/dev/null; then
+    if ! sdk install java 17.0.17-tem 2>/dev/null; then
+        if ! sdk install java 17.0.17-tem 2>/dev/null; then
             echo ""
             warn "Could not install using generic identifiers. Available Java 17 versions:"
             sdk list java | grep -E "17\..*tem" | head -10 || echo "  (Could not list versions)"
