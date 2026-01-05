@@ -47,6 +47,7 @@ public final class SendInviteCmd implements Runnable {
                 String inviteId = smtp.sendInvite(cfg.email, to, keys, context.invites());
                 System.out.println("Sent invite to " + to + " inviteId=" + inviteId);
                 System.out.println("Contact stored/updated in contacts.json (status=invited-out)");
+
             }
         } catch (Exception e) {
             System.err.println("send-invite failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());

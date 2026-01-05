@@ -99,16 +99,15 @@ public final class AckInviCmd implements Runnable {
 
             context.contacts().upsertKeys(inviterEmail, "ready", inviterFp, inviterEdPub, inviterXPub);
             System.out.println("Stored inviter keys in contacts.json (TOFU pin).");
-
             try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
                 smtp.sendAcceptWithKeys(cfg.email, inviterEmail, inviteId,
                         myKeys.fingerprintHex(), myKeys.ed25519PublicB64(), myKeys.x25519PublicB64());
             }
             System.out.println("Sent ACCEPT to " + inviterEmail + " (your keys gossiped).");
-
             context.invites().ensureIncoming(inviteId, inviterEmail, cfg.email, subject);
             context.invites().markIncomingAcked(inviteId);
             System.out.println("Marked invite as acked locally (invites.json)");
+
         } catch (Exception e) {
             System.err.println("Ack invi failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }

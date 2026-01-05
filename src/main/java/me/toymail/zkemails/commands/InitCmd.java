@@ -84,6 +84,7 @@ public final class InitCmd implements Runnable {
             context.addAndSwitchProfile(email);
             System.out.println("Set " + email + " as default profile");
 
+
         } catch (Exception e) {
             System.err.println("init failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
