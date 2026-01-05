@@ -1,12 +1,12 @@
-# zkemails (toy)
-A toy email client + protocol scaffolding for "key gossip + TOFU" E2E email experiments.
+# zkemails
+Email client + protocol scaffolding for "key gossip + TOFU" E2E emails.
 
 ## Installation
 
 ### Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/0.0.1.beta1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/main/install.sh | bash
 ```
 
 This will:
@@ -18,9 +18,13 @@ This will:
 After installation:
 ```bash
 zkemails --help
-zkemails init --email you@gmail.com --password
-```
+zkemails init --email you@gmail.com --password 
 
+```
+### Points to consider
+This password is not your gmail password. Gmail has a concept called App passwords. You need to enable 2FA for your account, create an app password and then use it here.
+You can create your app password [here](https://myaccount.google.com/apppasswords).
+Keep in mind that if you see a No access page. You have to enable 2FA for your account and try again.
 ### Manual Install
 
 1. Download the installer:

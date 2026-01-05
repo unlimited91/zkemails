@@ -62,10 +62,8 @@ parse_args() {
 }
 
 check_command() {
-    if ! command -v "$1" &> /dev/null; then
-        return 1
-    fi
-    return 0
+    command -v "$1" >/dev/null 2>&1
+    return $?
 }
 
 install_java_via_sdkman() {
@@ -94,7 +92,7 @@ install_java_via_sdkman() {
         echo ""
 
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            error "Java 17+ is required to run zkemails. Installation cancelled. Please install Java 17 manually and run this script again"
+            error "Java 17+ is required to run zkemails. Installation cancelled. Please install Java 17+ manually and run this script again."
         fi
 
         info "Installing SDKMAN..."
@@ -143,7 +141,17 @@ install_java_via_sdkman() {
         error "Java installation completed but java command not found. Please restart your shell and try again."
     fi
 
-    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
+    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
+
+    # Validate version is numeric and >= 17
+    if [[ ! "$JAVA_VERSION" =~ ^[0-9]+$ ]]; then
+        error "Java installation completed but could not verify version. Please check your installation."
+    fi
+
+    if [[ "$JAVA_VERSION" -lt 17 ]]; then
+        error "Java $JAVA_VERSION was installed but Java 17+ is required. Please try installing a newer version."
+    fi
+
     info "Java $JAVA_VERSION installed successfully"
     echo ""
     echo -e "${GREEN}Note:${NC} After installation completes, you may need to restart your shell"
@@ -159,13 +167,28 @@ check_prerequisites() {
         error "curl is required but not installed. Please install curl and try again."
     fi
 
+    # Verify curl actually works by checking its version
+    if ! curl --version >/dev/null 2>&1; then
+        error "curl command exists but is not functioning properly. Please reinstall curl and try again."
+    fi
+
     # Check Java
     if ! check_command java; then
         install_java_via_sdkman
     fi
 
-    # Check Java version
-    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
+    # Check Java version - validate it exists and is numeric
+    if ! check_command java; then
+        error "Java installation failed or java command not found. Please install Java 17+ manually."
+    fi
+
+    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
+
+    # Validate that JAVA_VERSION is numeric
+    if [[ ! "$JAVA_VERSION" =~ ^[0-9]+$ ]]; then
+        error "Could not determine Java version. Please ensure Java 17+ is installed correctly."
+    fi
+
     if [[ "$JAVA_VERSION" -lt 17 ]]; then
         echo ""
         echo -e "${YELLOW}Java $JAVA_VERSION is installed but Java 17+ is required.${NC}"
@@ -180,9 +203,12 @@ check_prerequisites() {
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             install_java_via_sdkman
             # Re-check version after installation
-            JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
-            if [[ "$JAVA_VERSION" -lt 17 ]]; then
-                error "Java 17+ is required. Found Java $JAVA_VERSION after installation. Please check your setup."
+            if ! check_command java; then
+                error "Java installation failed or java command not found. Please install Java 17+ manually."
+            fi
+            JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1 2>/dev/null)
+            if [[ ! "$JAVA_VERSION" =~ ^[0-9]+$ ]] || [[ "$JAVA_VERSION" -lt 17 ]]; then
+                error "Java 17+ is required. Installation or verification failed. Please check your setup."
             fi
         else
             error "Java 17+ is required. Found Java $JAVA_VERSION. Please upgrade Java and try again."
