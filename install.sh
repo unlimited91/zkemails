@@ -214,14 +214,14 @@ download_jar() {
     mkdir -p "$BIN_DIR"
 
     # Construct download URL - assuming release asset is named zkemails-<version>-fat.jar
-    DOWNLOAD_URL="https://github.com/$REPO/releases/download/v$VERSION/zkemails-$VERSION-fat.jar"
+    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/zkemails-$VERSION-fat.jar"
 
     # Try downloading
     HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$BIN_DIR/$JAR_NAME" "$DOWNLOAD_URL" 2>/dev/null || echo "000")
 
     if [[ "$HTTP_CODE" != "200" ]]; then
         # Try alternate naming pattern (without version in filename)
-        DOWNLOAD_URL="https://github.com/$REPO/releases/download/v$VERSION/zkemails-fat.jar"
+        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/zkemails-fat.jar"
         HTTP_CODE=$(curl -fsSL -w "%{http_code}" -o "$BIN_DIR/$JAR_NAME" "$DOWNLOAD_URL" 2>/dev/null || echo "000")
     fi
 
