@@ -24,7 +24,7 @@ public class InitCmdTest extends CommandTestBase {
             SmtpClient smtp = mock(SmtpClient.class);
             mockedSmtp.when(() -> SmtpClient.connect(any())).thenReturn(smtp);
 
-            InitCmd cmd = new InitCmd();
+            InitCmd cmd = new InitCmd(context);
             cmd.email = "test@example.com";
             cmd.password = "pass";
             cmd.imapHost = "imap.test";
@@ -48,7 +48,7 @@ public class InitCmdTest extends CommandTestBase {
         try (MockedStatic<ImapClient> mockedImap = mockStatic(ImapClient.class)) {
             mockedImap.when(() -> ImapClient.connect(any())).thenThrow(new RuntimeException("IMAP Fail"));
 
-            InitCmd cmd = new InitCmd();
+            InitCmd cmd = new InitCmd(context);
             cmd.email = "test@example.com";
             cmd.password = "pass";
 

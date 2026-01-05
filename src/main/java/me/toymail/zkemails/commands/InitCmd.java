@@ -4,16 +4,20 @@ import me.toymail.zkemails.ImapClient;
 import me.toymail.zkemails.SmtpClient;
 import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
+import me.toymail.zkemails.store.StoreContext;
 import me.toymail.zkemails.store.ZkStore;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.nio.file.*;
-import java.util.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Command(name = "init", description = "Authenticate to IMAP/SMTP, then generate/store keys + config.")
 public final class InitCmd implements Runnable {
+    private final StoreContext context;
+
+    public InitCmd(StoreContext context) {
+        this.context = context;
+    }
 
     @Option(names="--email", required = true, description = "Email address (e.g. user@gmail.com)")
     String email;
@@ -48,13 +52,12 @@ public final class InitCmd implements Runnable {
             }
 
             // 3) Persist config + keys only after successful auth
-            // Ensure ~/.zkemails/{email}/ is used for config and keys
             Path zkRoot = Paths.get(System.getProperty("user.home"), ".zkemails");
             Path emailDir = zkRoot.resolve(email);
             if (!Files.exists(emailDir)) {
                 Files.createDirectories(emailDir);
             }
-            ZkStore store = new ZkStore(email); // Fix this Zkstore is getting double the profile path
+            ZkStore store = new ZkStore(email);
             store.ensure();
 
             Config cfg = new Config();
@@ -77,27 +80,9 @@ public final class InitCmd implements Runnable {
                 System.out.println("✅ Auth OK. Wrote config.json. keys.json already exists in " + store.baseDir());
             }
 
-            // Write/update profile.config at ~/.zkemails/profile.config
-            Path profileConfigPath = zkRoot.resolve("profile.config");
-            ObjectMapper mapper = new ObjectMapper();
-            Map<String, Object> profileConfig = new HashMap<>();
-            List<String> profiles = new ArrayList<>();
-            String defaultProfile = email;
-
-            if (Files.exists(profileConfigPath)) {
-                profileConfig = mapper.readValue(profileConfigPath.toFile(), Map.class);
-                profiles = (List<String>) profileConfig.getOrDefault("profiles", new ArrayList<>());
-                if (!profiles.contains(email)) {
-                    profiles.add(email);
-                }
-            } else {
-                profiles.add(email);
-            }
-            profileConfig.put("profiles", profiles);
-            profileConfig.put("default", defaultProfile);
-
-            mapper.writerWithDefaultPrettyPrinter().writeValue(profileConfigPath.toFile(), profileConfig);
-            System.out.println("✅ Set " + email + " as default profile in " + profileConfigPath);
+            // Update profile config and switch to new profile
+            context.addAndSwitchProfile(email);
+            System.out.println("✅ Set " + email + " as default profile");
 
         } catch (Exception e) {
             System.err.println("❌ init failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());

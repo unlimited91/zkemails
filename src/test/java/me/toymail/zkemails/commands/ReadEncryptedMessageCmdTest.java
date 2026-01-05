@@ -18,7 +18,7 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
 
     @Test
     public void testRemList_NoProfile() {
-        ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd();
+        ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd(context);
         cmd.run();
         // Should print error about no profile (can capture stdout/stderr if needed, but for now just ensure no exception)
     }
@@ -35,7 +35,9 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
                 "{\"profiles\":[\"test@example.com\"],\"default\":\"test@example.com\"}"
         );
 
-        ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd();
+        reinitializeContext();
+
+        ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd(context);
         cmd.password = "pass";
         cmd.run();
         // Should print error about not initialized
@@ -44,6 +46,7 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
     @Test
     public void testRemList_Success() throws Exception {
         setupInitializedProfile("test@example.com");
+        reinitializeContext();
 
         try (MockedStatic<ImapClient> mockedImap = mockStatic(ImapClient.class)) {
             ImapClient imap = mock(ImapClient.class);
@@ -57,7 +60,7 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
             headers.put("X-ZKEmails-Sig", List.of("sig123"));
             when(imap.fetchAllHeadersByUid(100)).thenReturn(headers);
 
-            ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd();
+            ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd(context);
             cmd.password = "pass";
             cmd.run();
 
@@ -71,6 +74,13 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
         setupInitializedProfile("test@example.com");
         IdentityKeys.KeyBundle recipientKeys = new ZkStore("test@example.com").readJson("keys.json", IdentityKeys.KeyBundle.class);
         IdentityKeys.KeyBundle senderKeys = IdentityKeys.generate();
+
+        // Add sender as contact so we can verify signature
+        ZkStore store = new ZkStore("test@example.com");
+        me.toymail.zkemails.store.ContactsStore contacts = new me.toymail.zkemails.store.ContactsStore(store);
+        contacts.upsertKeys("sender@example.com", "ready", senderKeys.fingerprintHex(), senderKeys.ed25519PublicB64(), senderKeys.x25519PublicB64());
+
+        reinitializeContext();
 
         try (MockedStatic<ImapClient> mockedImap = mockStatic(ImapClient.class)) {
             ImapClient imap = mock(ImapClient.class);
@@ -93,12 +103,13 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
             headers.put("X-ZKEmails-WrappedKey-Nonce", List.of(payload.wrappedKeyNonceB64()));
             headers.put("X-ZKEmails-Nonce", List.of(payload.msgNonceB64()));
             headers.put("X-ZKEmails-Ciphertext", List.of(payload.ciphertextB64()));
-            headers.put("X-ZKEmails-Sender-Fp", List.of(senderKeys.fingerprintHex())); // Old header, but code checks it
+            headers.put("X-ZKEmails-Sender-Fp", List.of(senderKeys.fingerprintHex()));
+            headers.put("X-ZKEmails-Recipient-Fp", List.of(payload.recipientFpHex()));
             headers.put("X-ZKEmails-PubKey-Ed25519", List.of(senderKeys.ed25519PublicB64()));
 
             when(imap.fetchAllHeadersByUid(100)).thenReturn(headers);
 
-            ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd();
+            ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd(context);
             cmd.password = "pass";
             cmd.messageId = payload.sigB64();
             cmd.run();

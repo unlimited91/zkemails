@@ -1,17 +1,20 @@
 package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.ImapClient;
-import me.toymail.zkemails.ZkEmails;
 import me.toymail.zkemails.store.Config;
-import me.toymail.zkemails.store.ZkStore;
+import me.toymail.zkemails.store.StoreContext;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-import java.nio.file.Path;
 import java.util.List;
 
 @Command(name = "inbox", description = "List latest emails (optionally filter by a header).")
 public final class InboxCmd implements Runnable {
+    private final StoreContext context;
+
+    public InboxCmd(StoreContext context) {
+        this.context = context;
+    }
 
     @Option(names="--password", required = true, interactive = true,
             description = "App password / password (not saved)")
@@ -29,13 +32,11 @@ public final class InboxCmd implements Runnable {
     @Override
     public void run() {
         try {
-            String profile = ZkEmails.getCurrentProfileDir();
-            if (profile == null ) {
+            if (!context.hasActiveProfile()) {
                 System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
                 return;
             }
-            ZkStore store = new ZkStore(profile);
-            Config cfg = store.readJson("config.json", Config.class);
+            Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
                 System.err.println("❌ Not initialized. Run: zkemails init ...");
                 return;

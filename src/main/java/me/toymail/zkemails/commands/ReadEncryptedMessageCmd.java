@@ -1,12 +1,11 @@
 package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.ImapClient;
-import me.toymail.zkemails.ZkEmails;
 import me.toymail.zkemails.crypto.CryptoBox;
 import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.ContactsStore;
-import me.toymail.zkemails.store.ZkStore;
+import me.toymail.zkemails.store.StoreContext;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -15,6 +14,12 @@ import java.util.*;
 
 @Command(name = "rem", description = "Read encrypted messages (list or decrypt by messageId)")
 public class ReadEncryptedMessageCmd implements Runnable {
+    private final StoreContext context;
+
+    public ReadEncryptedMessageCmd(StoreContext context) {
+        this.context = context;
+    }
+
     @Option(names = "--password", required = true, interactive = true, description = "App password / password (not saved)")
     String password;
 
@@ -26,18 +31,15 @@ public class ReadEncryptedMessageCmd implements Runnable {
 
     @Override
     public void run() {
-        String profile = ZkEmails.getCurrentProfileDir();
-        if (profile == null) {
+        if (!context.hasActiveProfile()) {
             System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
             return;
         }
-        ZkStore store = new ZkStore(profile);
-        ContactsStore contacts = new ContactsStore(store);
         Config cfg;
         IdentityKeys.KeyBundle myKeys;
         try {
-            cfg = store.readJson("config.json", Config.class);
-            myKeys = store.readJson("keys.json", IdentityKeys.KeyBundle.class);
+            cfg = context.zkStore().readJson("config.json", Config.class);
+            myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
         } catch (IOException e) {
             System.err.println("❌ Error reading config or keys: " + e.getMessage());
             return;
@@ -93,7 +95,7 @@ public class ReadEncryptedMessageCmd implements Runnable {
                 String fromEmail = found.from();
                 String toEmail = cfg.email;
                 String subject = found.subject();
-                ContactsStore.Contact c = contacts.get(fromEmail);
+                ContactsStore.Contact c = context.contacts().get(fromEmail);
                 // Check for missing or empty headers
 //                Map<String, String> required = new LinkedHashMap<>();
 //                required.put("X-ZKEmails-Ephem-X25519", ephemX25519PubB64);

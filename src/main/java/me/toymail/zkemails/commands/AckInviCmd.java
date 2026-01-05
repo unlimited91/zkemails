@@ -2,12 +2,9 @@ package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.ImapClient;
 import me.toymail.zkemails.SmtpClient;
-import me.toymail.zkemails.ZkEmails;
 import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
-import me.toymail.zkemails.store.ContactsStore;
-import me.toymail.zkemails.store.InviteStore;
-import me.toymail.zkemails.store.ZkStore;
+import me.toymail.zkemails.store.StoreContext;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -16,6 +13,11 @@ import java.util.Map;
 
 @Command(name = "invi", description = "Acknowledge an invite by invite-id (send accept + store inviter pubkeys).")
 public final class AckInviCmd implements Runnable {
+    private final StoreContext context;
+
+    public AckInviCmd(StoreContext context) {
+        this.context = context;
+    }
 
     @Option(names="--invite-id", required = true, description = "Invite ID to acknowledge")
     String inviteId;
@@ -27,19 +29,17 @@ public final class AckInviCmd implements Runnable {
     @Override
     public void run() {
         try {
-            String profile = ZkEmails.getCurrentProfileDir();
-            if (profile == null) {
+            if (!context.hasActiveProfile()) {
                 System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
                 return;
             }
-            ZkStore store = new ZkStore(profile);
-            Config cfg = store.readJson("config.json", Config.class);
+            Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
                 System.err.println("❌ Not initialized. Run: zkemails init ...");
                 return;
             }
 
-            IdentityKeys.KeyBundle myKeys = store.readJson("keys.json", IdentityKeys.KeyBundle.class);
+            IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
             if (myKeys == null) {
                 System.err.println("❌ Missing keys.json. Re-run init.");
                 return;
@@ -97,8 +97,7 @@ public final class AckInviCmd implements Runnable {
                 System.out.println("Found invite from " + inviterEmail + " subject=" + subject);
             }
 
-            ContactsStore contacts = new ContactsStore(store);
-            contacts.upsertKeys(inviterEmail, "ready", inviterFp, inviterEdPub, inviterXPub);
+            context.contacts().upsertKeys(inviterEmail, "ready", inviterFp, inviterEdPub, inviterXPub);
             System.out.println("✅ Stored inviter keys in contacts.json (TOFU pin).");
 
             try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
@@ -107,9 +106,8 @@ public final class AckInviCmd implements Runnable {
             }
             System.out.println("✅ Sent ACCEPT to " + inviterEmail + " (your keys gossiped).");
 
-            InviteStore inv = new InviteStore(store);
-            inv.ensureIncoming(inviteId, inviterEmail, cfg.email, subject);
-            inv.markIncomingAcked(inviteId);
+            context.invites().ensureIncoming(inviteId, inviterEmail, cfg.email, subject);
+            context.invites().markIncomingAcked(inviteId);
             System.out.println("✅ Marked invite as acked locally (invites.json)");
         } catch (Exception e) {
             System.err.println("❌ ack invi failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());

@@ -1,10 +1,8 @@
 package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.ImapClient;
-import me.toymail.zkemails.ZkEmails;
 import me.toymail.zkemails.store.Config;
-import me.toymail.zkemails.store.ContactsStore;
-import me.toymail.zkemails.store.ZkStore;
+import me.toymail.zkemails.store.StoreContext;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -13,6 +11,11 @@ import java.util.Map;
 
 @Command(name = "ack", description = "Sync ACCEPT messages and store sender public keys for future encrypted communication.")
 public final class SyncAckCmd implements Runnable {
+    private final StoreContext context;
+
+    public SyncAckCmd(StoreContext context) {
+        this.context = context;
+    }
 
     @Option(names="--password", required = true, interactive = true,
             description = "App password / password (not saved)")
@@ -24,19 +27,15 @@ public final class SyncAckCmd implements Runnable {
     @Override
     public void run() {
         try {
-            String profile = ZkEmails.getCurrentProfileDir();
-            if (profile == null) {
+            if (!context.hasActiveProfile()) {
                 System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
                 return;
             }
-            ZkStore store = new ZkStore(profile);
-            Config cfg = store.readJson("config.json", Config.class);
+            Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
                 System.err.println("❌ Not initialized. Run: zkemails init ...");
                 return;
             }
-
-            ContactsStore contacts = new ContactsStore(store);
 
             int updated = 0;
             try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
@@ -53,7 +52,7 @@ public final class SyncAckCmd implements Runnable {
                     if (sender == null) continue;
                     if (fp == null || ed == null || x == null) continue;
 
-                    contacts.upsertKeys(sender, "ready", fp, ed, x);
+                    context.contacts().upsertKeys(sender, "ready", fp, ed, x);
                     updated++;
                 }
             }

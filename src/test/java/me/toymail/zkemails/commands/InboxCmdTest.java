@@ -19,6 +19,7 @@ public class InboxCmdTest extends CommandTestBase {
     @Test
     public void testInbox_Success() throws Exception {
         setupInitializedProfile("test@example.com");
+        reinitializeContext();
 
         try (MockedStatic<ImapClient> mockedImap = mockStatic(ImapClient.class)) {
             ImapClient imap = mock(ImapClient.class);
@@ -28,7 +29,7 @@ public class InboxCmdTest extends CommandTestBase {
             msgs.add(new ImapClient.MailSummary(1, 100, false, new Date(), "sender@example.com", "Subject"));
             when(imap.listInboxLatest(anyInt())).thenReturn(msgs);
 
-            InboxCmd cmd = new InboxCmd();
+            InboxCmd cmd = new InboxCmd(context);
             cmd.password = "pass";
             cmd.limit = 10;
 
@@ -41,6 +42,7 @@ public class InboxCmdTest extends CommandTestBase {
     @Test
     public void testInbox_Filter() throws Exception {
         setupInitializedProfile("test@example.com");
+        reinitializeContext();
 
         try (MockedStatic<ImapClient> mockedImap = mockStatic(ImapClient.class)) {
             ImapClient imap = mock(ImapClient.class);
@@ -49,7 +51,7 @@ public class InboxCmdTest extends CommandTestBase {
             List<ImapClient.MailSummary> msgs = new ArrayList<>();
             when(imap.searchHeaderEquals(eq("X-Type"), eq("invite"), anyInt())).thenReturn(msgs);
 
-            InboxCmd cmd = new InboxCmd();
+            InboxCmd cmd = new InboxCmd(context);
             cmd.password = "pass";
             cmd.headerName = "X-Type";
             cmd.headerValue = "invite";

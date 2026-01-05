@@ -42,7 +42,9 @@ public class AckInviCmdTest extends CommandTestBase {
             headers.put("X-ZKEmails-PubKey-X25519", List.of("x123"));
             when(imap.fetchAllHeadersByUid(100)).thenReturn(headers);
 
-            AckInviCmd cmd = new AckInviCmd();
+            reinitializeContext();
+
+            AckInviCmd cmd = new AckInviCmd(context);
             cmd.password = "pass";
             cmd.inviteId = "inv123";
 

@@ -1,5 +1,6 @@
 package me.toymail.zkemails.commands;
 
+import me.toymail.zkemails.store.StoreContext;
 import picocli.CommandLine.Command;
 
 @Command(
@@ -19,6 +20,12 @@ import picocli.CommandLine.Command;
         }
 )
 public final class RootCmd implements Runnable {
+    private final StoreContext context;
+
+    public RootCmd(StoreContext context) {
+        this.context = context;
+    }
+
     @Override public void run() {
         System.out.println("Use --help. Example: zkemails init --help");
     }
