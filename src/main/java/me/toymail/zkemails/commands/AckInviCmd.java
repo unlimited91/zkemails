@@ -54,43 +54,28 @@ public final class AckInviCmd implements Runnable {
             try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
                     cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
             ))) {
-                List<ImapClient.MailSummary> matches = imap.searchHeaderEquals("X-ZKEmails-Invite-Id", inviteId, 50);
+                // Search by both type=invite AND invite-id in one query
+                List<ImapClient.MailSummary> matches = imap.searchByInviteId(inviteId, 1);
                 if (matches.isEmpty()) {
-                    System.err.println("No email found with invite-id=" + inviteId);
+                    System.err.println("No invite found with invite-id=" + inviteId);
                     return;
                 }
 
-                ImapClient.MailSummary chosen = null;
-                Map<String, List<String>> chosenHdrs = null;
+                ImapClient.MailSummary invite = matches.get(0);
+                Map<String, List<String>> headers = imap.fetchAllHeadersByUid(invite.uid());
 
-                for (var m : matches) {
-                    Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(m.uid());
-                    String type = first(hdrs, "X-ZKEmails-Type");
-                    String id = first(hdrs, "X-ZKEmails-Invite-Id");
-                    if ("invite".equalsIgnoreCase(type) && inviteId.equals(id)) {
-                        chosen = m;
-                        chosenHdrs = hdrs;
-                        break;
-                    }
-                }
-                if (chosen == null) {
-                    chosen = matches.get(0);
-                    chosenHdrs = imap.fetchAllHeadersByUid(chosen.uid());
-                }
-
-                inviterEmail = extractEmail(chosen.from());
-                subject = chosen.subject();
-
-                inviterFp = first(chosenHdrs, "X-ZKEmails-Fingerprint");
-                inviterEdPub = first(chosenHdrs, "X-ZKEmails-PubKey-Ed25519");
-                inviterXPub = first(chosenHdrs, "X-ZKEmails-PubKey-X25519");
+                inviterEmail = extractEmail(invite.from());
+                subject = invite.subject();
+                inviterFp = first(headers, "X-ZKEmails-Fingerprint");
+                inviterEdPub = first(headers, "X-ZKEmails-PubKey-Ed25519");
+                inviterXPub = first(headers, "X-ZKEmails-PubKey-X25519");
 
                 if (inviterEmail == null) {
-                    System.err.println("Could not parse inviter email from: " + chosen.from());
+                    System.err.println("Could not parse inviter email from: " + invite.from());
                     return;
                 }
                 if (inviterFp == null || inviterEdPub == null || inviterXPub == null) {
-                    System.err.println("Invite missing key headers from inviter (Fingerprint/Ed25519/X25519).");
+                    System.err.println("Invite missing key headers (Fingerprint/Ed25519/X25519).");
                     return;
                 }
 

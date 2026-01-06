@@ -32,7 +32,7 @@ public class AckInviCmdTest extends CommandTestBase {
             // Mock finding invite email
             List<ImapClient.MailSummary> msgs = new ArrayList<>();
             msgs.add(new ImapClient.MailSummary(1, 100, false, new Date(), "inviter@example.com", "Invite"));
-            when(imap.searchHeaderEquals(eq("X-ZKEmails-Invite-Id"), eq("inv123"), anyInt())).thenReturn(msgs);
+            when(imap.searchByInviteId(eq("inv123"), anyInt())).thenReturn(msgs);
 
             Map<String, List<String>> headers = new HashMap<>();
             headers.put("X-ZKEmails-Type", List.of("invite"));
