@@ -6,7 +6,7 @@ import picocli.CommandLine.Command;
 @Command(
         name = "zkemails",
         mixinStandardHelpOptions = true,
-        description = "Zero Knowledge email client (key gossip + TOFU).",
+        description = "Zero Knowledge email client",
         subcommands = {
                 InitCmd.class,
                 InboxCmd.class,
@@ -17,6 +17,7 @@ import picocli.CommandLine.Command;
                 ProfileCmd.class,
                 SendMessageCmd.class,
                 ReadEncryptedMessageCmd.class,
+                SyncAckCmd.class
         }
 )
 public final class RootCmd implements Runnable {

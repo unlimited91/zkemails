@@ -11,7 +11,7 @@ import picocli.CommandLine.Option;
 import java.util.List;
 import java.util.Map;
 
-@Command(name = "invi", description = "Acknowledge an invite by invite-id (send accept + store inviter pubkeys).")
+@Command(name = "invi", description = "Acknowledge an invite by invite-id")
 public final class AckInviCmd implements Runnable {
     private final StoreContext context;
 

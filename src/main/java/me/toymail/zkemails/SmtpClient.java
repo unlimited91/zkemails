@@ -63,12 +63,46 @@ public final class SmtpClient implements AutoCloseable {
                              InviteStore inviteStore) throws MessagingException {
         String inviteId = UUID.randomUUID().toString();
         String subject = "🔒 Private chat? (zkemails)";
-        String body =
-                "Your friend wants to chat in private using zkemails.\n\n" +
-                        "If you want to enable encrypted emails:\n" +
-                        "1) Install zkemails\n" +
-                        "2) Reply to this email with: yes satoshi\n\n" +
-                        "(This is a toy protocol invite.)\n";
+        String body = String.format("""
+                Hey! I'd like to chat with you privately using zkemails.
+
+                Invitation ID: %s
+
+                What is zkemails?
+                -----------------
+                zkemails is an end-to-end encrypted email protocol that works on top of
+                regular email. Read more: https://musings.sayanr.com/2025/12/26/zkmails.html
+
+                Getting Started:
+                ----------------
+                1. Install zkemails:
+                   curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/main/install.sh | bash
+
+                2. Initialize with your email:
+                   zkemails init --email %s --password
+
+                3. Accept this invite:
+                   zkemails ack invi --invite-id %s --password
+
+                Using zkemails:
+                ---------------
+                View your inbox:
+                   zkemails inbox --password --limit 20
+
+                Send an encrypted message:
+                   zkemails send-message --to %s --subject "Hello" --body "Your message" --password
+
+                List encrypted messages:
+                   zkemails rem --password
+
+                Read/decrypt a specific message:
+                   zkemails rem --message <message-id> --password
+                   (Get the message-id from 'zkemails rem --password')
+
+                That's it! Once you accept, we can exchange end-to-end encrypted messages.
+
+                (This is a toy protocol for key gossip + TOFU encrypted emails.)
+                """, inviteId, toEmail, inviteId, fromEmail);
 
         MimeMessage msg = new MimeMessage(session);
         msg.setFrom(new InternetAddress(fromEmail));

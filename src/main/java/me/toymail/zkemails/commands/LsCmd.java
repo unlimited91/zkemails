@@ -4,7 +4,7 @@ import picocli.CommandLine.Command;
 
 @Command(
         name = "ls",
-        description = "List protocol items.",
+        description = "List incoming invites pending acknowledgement from the local store",
         subcommands = { LsInviCmd.class }
 )
 public final class LsCmd implements Runnable {

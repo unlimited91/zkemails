@@ -10,7 +10,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-@Command(name = "invi", description = "List incoming invites pending acknowledgement (local; no IMAP).")
+@Command(name = "invi", description = "List incoming invites pending acknowledgement from the local store")
 public final class LsInviCmd implements Runnable {
     private final StoreContext context;
 

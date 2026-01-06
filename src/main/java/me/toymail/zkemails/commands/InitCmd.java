@@ -11,7 +11,7 @@ import picocli.CommandLine.Option;
 
 import java.nio.file.*;
 
-@Command(name = "init", description = "Authenticate to IMAP/SMTP, then generate/store keys + config.")
+@Command(name = "init", description = "Authenticates the email credentials provided by the user")
 public final class InitCmd implements Runnable {
     private final StoreContext context;
 

@@ -4,7 +4,7 @@ import picocli.CommandLine.Command;
 
 @Command(
         name = "ack",
-        description = "Acknowledge protocol items.",
+        description = "Acknowledge the invite via an invite-id.",
         subcommands = { AckInviCmd.class }
 )
 public final class AckCmd implements Runnable {

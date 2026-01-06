@@ -10,7 +10,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-@Command(name = "invi", description = "List acked incoming invites (local).")
+@Command(name = "invi", description = "List acknowledged invites. This is fetched from local store")
 public final class LsaInviCmd implements Runnable {
     private final StoreContext context;
 
