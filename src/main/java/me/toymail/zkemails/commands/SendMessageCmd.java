@@ -28,8 +28,7 @@ public final class SendMessageCmd implements Runnable {
     @Option(names="--body", required = true)
     String body;
 
-    @Option(names="--password", required = true, interactive = true,
-            description = "App password / password (not saved)")
+    @Option(names="--password", description = "App password (optional if saved to keychain)")
     String password;
 
     @Override
@@ -54,11 +53,13 @@ public final class SendMessageCmd implements Runnable {
             ContactsStore.Contact c = context.contacts().get(to);
             if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
                 log.error("No pinned X25519 key for contact: {}", to);
-                log.error("Run: zkemails sync ack --password   (or ack invi if they invited you).");
+                log.error("Run: zkemails sync-ack (or invi if they invited you).");
                 return;
             }
 
-            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
+            String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
+
+            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, resolvedPassword))) {
                 smtp.sendEncryptedMessage(cfg.email, to, subject, body, myKeys, c.fingerprintHex, c.x25519PublicB64);
             }
 

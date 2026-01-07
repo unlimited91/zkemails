@@ -19,7 +19,8 @@ import picocli.CommandLine.Command;
                 ProfileCmd.class,
                 SendMessageCmd.class,
                 ReadEncryptedMessageCmd.class,
-                SyncAckCmd.class
+                SyncAckCmd.class,
+                CredentialCmd.class
         }
 )
 public final class RootCmd implements Runnable {

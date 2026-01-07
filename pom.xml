@@ -47,6 +47,13 @@
       <version>2.17.2</version>
     </dependency>
 
+    <!-- System Keychain (macOS Keychain, Linux Secret Service, Windows Credential Manager) -->
+    <dependency>
+      <groupId>com.github.javakeyring</groupId>
+      <artifactId>java-keyring</artifactId>
+      <version>1.0.4</version>
+    </dependency>
+
     <!-- Logging: SLF4J + Logback -->
     <dependency>
       <groupId>org.slf4j</groupId>
