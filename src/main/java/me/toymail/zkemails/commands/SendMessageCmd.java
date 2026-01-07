@@ -5,11 +5,14 @@ import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.ContactsStore;
 import me.toymail.zkemails.store.StoreContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 @Command(name = "send-message", description = "Send a pure E2E encrypted email using pinned contact keys.")
 public final class SendMessageCmd implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(SendMessageCmd.class);
     private final StoreContext context;
 
     public SendMessageCmd(StoreContext context) {
@@ -33,25 +36,25 @@ public final class SendMessageCmd implements Runnable {
     public void run() {
         try {
             if (!context.hasActiveProfile()) {
-                System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
+                log.error("No active profile set or profile directory missing. Use 'prof' to set a profile.");
                 return;
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                System.err.println("Not initialized. Run: zkemails init ...");
+                log.error("Not initialized. Run: zkemails init ...");
                 return;
             }
 
             IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
             if (myKeys == null) {
-                System.err.println("Missing keys.json. Re-run init.");
+                log.error("Missing keys.json. Re-run init.");
                 return;
             }
 
             ContactsStore.Contact c = context.contacts().get(to);
             if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
-                System.err.println("No pinned X25519 key for contact: " + to);
-                System.err.println("Run: zkemails sync ack --password   (or ack invi if they invited you).");
+                log.error("No pinned X25519 key for contact: {}", to);
+                log.error("Run: zkemails sync ack --password   (or ack invi if they invited you).");
                 return;
             }
 
@@ -59,9 +62,9 @@ public final class SendMessageCmd implements Runnable {
                 smtp.sendEncryptedMessage(cfg.email, to, subject, body, myKeys, c.fingerprintHex, c.x25519PublicB64);
             }
 
-            System.out.println("Encrypted message sent to " + to + " (type=msg)");
+            log.info("Encrypted message sent to {} (type=msg)", to);
         } catch (Exception e) {
-            System.err.println("send-message failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            log.error("send-message failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
         }
     }
 }

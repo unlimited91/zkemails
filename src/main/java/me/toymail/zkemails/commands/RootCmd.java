@@ -1,6 +1,8 @@
 package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.store.StoreContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 
 @Command(
@@ -21,6 +23,7 @@ import picocli.CommandLine.Command;
         }
 )
 public final class RootCmd implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(RootCmd.class);
     private final StoreContext context;
 
     public RootCmd(StoreContext context) {
@@ -28,6 +31,6 @@ public final class RootCmd implements Runnable {
     }
 
     @Override public void run() {
-        System.out.println("Use --help. Example: zkemails init --help");
+        log.info("Use --help. Example: zkemails init --help");
     }
 }

@@ -6,6 +6,8 @@ import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.StoreContext;
 import me.toymail.zkemails.store.ZkStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -13,6 +15,7 @@ import java.nio.file.*;
 
 @Command(name = "init", description = "Authenticates the email credentials provided by the user")
 public final class InitCmd implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(InitCmd.class);
     private final StoreContext context;
 
     public InitCmd(StoreContext context) {
@@ -75,18 +78,18 @@ public final class InitCmd implements Runnable {
             if (!store.exists("keys.json")) {
                 var keys = IdentityKeys.generate();
                 store.writeJson("keys.json", keys);
-                System.out.println("Auth OK. Wrote config.json and generated keys.json in " + store.baseDir());
+                log.info("Auth OK. Wrote config.json and generated keys.json in {}", store.baseDir());
             } else {
-                System.out.println("Auth OK. Wrote config.json. keys.json already exists in " + store.baseDir());
+                log.info("Auth OK. Wrote config.json. keys.json already exists in {}", store.baseDir());
             }
 
             // Update profile config and switch to new profile
             context.addAndSwitchProfile(email);
-            System.out.println("Set " + email + " as default profile");
+            log.info("Set {} as default profile", email);
 
 
         } catch (Exception e) {
-            System.err.println("init failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            log.error("init failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
         }
     }
 }

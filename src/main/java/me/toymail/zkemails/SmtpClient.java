@@ -3,6 +3,8 @@ package me.toymail.zkemails;
 import jakarta.mail.*;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Date;
 import java.util.Map;
@@ -14,6 +16,7 @@ import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.InviteStore;
 
 public final class SmtpClient implements AutoCloseable {
+    private static final Logger log = LoggerFactory.getLogger(SmtpClient.class);
 
     public record SmtpConfig(String host, int port, String username, String password) {}
 
@@ -145,7 +148,7 @@ public final class SmtpClient implements AutoCloseable {
         try {
             if (inviteStore != null) inviteStore.addOutgoing(inviteId, fromEmail, toEmail, subject);
         } catch (Exception e) {
-            System.err.println("⚠️ Sent invite but failed to persist invites.json: " + e.getMessage());
+            log.warn("Sent invite but failed to persist invites.json: {}", e.getMessage());
         }
         return inviteId;
     }
