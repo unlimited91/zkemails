@@ -9,7 +9,7 @@ import picocli.CommandLine.Option;
 import java.util.List;
 import java.util.Map;
 
-@Command(name = "ack", description = "Sync ACCEPT messages and store sender public keys for future encrypted communication.")
+@Command(name = "sync-ack", description = "Sync ACCEPT messages and store sender public keys for future encrypted communication.")
 public final class SyncAckCmd implements Runnable {
     private final StoreContext context;
 
