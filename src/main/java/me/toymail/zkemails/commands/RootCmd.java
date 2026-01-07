@@ -1,12 +1,14 @@
 package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.store.StoreContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 
 @Command(
         name = "zkemails",
         mixinStandardHelpOptions = true,
-        description = "Zero Knowledge email client (key gossip + TOFU).",
+        description = "Zero Knowledge email client",
         subcommands = {
                 InitCmd.class,
                 InboxCmd.class,
@@ -17,9 +19,12 @@ import picocli.CommandLine.Command;
                 ProfileCmd.class,
                 SendMessageCmd.class,
                 ReadEncryptedMessageCmd.class,
+                SyncAckCmd.class,
+                CredentialCmd.class
         }
 )
 public final class RootCmd implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(RootCmd.class);
     private final StoreContext context;
 
     public RootCmd(StoreContext context) {
@@ -27,6 +32,6 @@ public final class RootCmd implements Runnable {
     }
 
     @Override public void run() {
-        System.out.println("Use --help. Example: zkemails init --help");
+        log.info("Use --help. Example: zkemails init --help");
     }
 }

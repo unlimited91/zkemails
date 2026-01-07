@@ -6,6 +6,8 @@ import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.ContactsStore;
 import me.toymail.zkemails.store.StoreContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -14,13 +16,14 @@ import java.util.*;
 
 @Command(name = "rem", description = "Read encrypted messages (list or decrypt by messageId)")
 public class ReadEncryptedMessageCmd implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(ReadEncryptedMessageCmd.class);
     private final StoreContext context;
 
     public ReadEncryptedMessageCmd(StoreContext context) {
         this.context = context;
     }
 
-    @Option(names = "--password", required = true, interactive = true, description = "App password / password (not saved)")
+    @Option(names = "--password", description = "App password (optional if saved to keychain)")
     String password;
 
     @Option(names = "--message", description = "Show decrypted message by messageId")
@@ -32,7 +35,7 @@ public class ReadEncryptedMessageCmd implements Runnable {
     @Override
     public void run() {
         if (!context.hasActiveProfile()) {
-            System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
+            log.error("No active profile set or profile directory missing. Use 'prof' to set a profile.");
             return;
         }
         Config cfg;
@@ -41,29 +44,32 @@ public class ReadEncryptedMessageCmd implements Runnable {
             cfg = context.zkStore().readJson("config.json", Config.class);
             myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
         } catch (IOException e) {
-            System.err.println("Error reading config or keys: " + e.getMessage());
+            log.error("Error reading config or keys: {}", e.getMessage());
             return;
         }
         if (cfg == null) {
-            System.err.println("Not initialized. Run: zkemails init ...");
+            log.error("Not initialized. Run: zkemails init ...");
             return;
         }
         if (myKeys == null) {
-            System.err.println("Missing keys.json. Re-run init.");
+            log.error("Missing keys.json. Re-run init.");
             return;
         }
-        try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password))) {
+
+        String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
+
+        try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, resolvedPassword))) {
             if (messageId == null) {
                 // rem list
                 List<ImapClient.MailSummary> msgs = imap.searchHeaderEquals("X-ZKEmails-Type", "msg", limit);
                 if (msgs.isEmpty()) {
-                    System.out.println("No encrypted messages found.");
+                    log.info("No encrypted messages found.");
                     return;
                 }
                 for (var m : msgs) {
                     Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(m.uid());
                     String sig = first(hdrs, "X-ZKEmails-Sig");
-                    System.out.printf("messageID=%s | UID=%d | from=%s | subject=%s | date=%s\n", sig, m.uid(), m.from(), m.subject(), m.received());
+                    log.info("messageID={} | UID={} | from={} | subject={} | date={}", sig, m.uid(), m.from(), m.subject(), m.received());
                 }
             } else {
                 // rem --message <messageId>
@@ -80,7 +86,7 @@ public class ReadEncryptedMessageCmd implements Runnable {
                     }
                 }
                 if (found == null) {
-                    System.err.println("No message found with messageId=" + messageId);
+                    log.error("No message found with messageId={}", messageId);
                     return;
                 }
                 // Extract encryption headers
@@ -137,13 +143,13 @@ public class ReadEncryptedMessageCmd implements Runnable {
                             c.ed25519PublicB64
 //                            senderEd25519PubB64 // use sender's pubkey if available, else null
                     );
-                    System.out.println("Decrypted message:\n" + plaintext);
+                    log.info("Decrypted message:\n{}", plaintext);
                 } catch (Exception e) {
-                    System.err.println("Decryption failed: " + e.getMessage());
+                    log.error("Decryption failed: {}", e.getMessage());
                 }
             }
         } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
+            log.error("Error: {}", e.getMessage());
         }
     }
 

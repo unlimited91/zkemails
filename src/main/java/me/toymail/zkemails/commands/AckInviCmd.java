@@ -5,14 +5,17 @@ import me.toymail.zkemails.SmtpClient;
 import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.StoreContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.util.List;
 import java.util.Map;
 
-@Command(name = "invi", description = "Acknowledge an invite by invite-id (send accept + store inviter pubkeys).")
+@Command(name = "invi", description = "Acknowledge an invite by invite-id")
 public final class AckInviCmd implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(AckInviCmd.class);
     private final StoreContext context;
 
     public AckInviCmd(StoreContext context) {
@@ -22,28 +25,29 @@ public final class AckInviCmd implements Runnable {
     @Option(names="--invite-id", required = true, description = "Invite ID to acknowledge")
     String inviteId;
 
-    @Option(names="--password", required = true, interactive = true,
-            description = "App password / password (not saved)")
+    @Option(names="--password", description = "App password (optional if saved to keychain)")
     String password;
 
     @Override
     public void run() {
         try {
             if (!context.hasActiveProfile()) {
-                System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
+                log.error("No active profile set or profile directory missing. Use 'prof' to set a profile.");
                 return;
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                System.err.println("Not initialized. Run: zkemails init ...");
+                log.error("Not initialized. Run: zkemails init ...");
                 return;
             }
 
             IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
             if (myKeys == null) {
-                System.err.println("Missing keys.json. Re-run init.");
+                log.error("Missing keys.json. Re-run init.");
                 return;
             }
+
+            String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
 
             String inviterEmail;
             String subject;
@@ -52,15 +56,15 @@ public final class AckInviCmd implements Runnable {
             String inviterXPub;
 
             try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
-                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
+                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, resolvedPassword
             ))) {
                 // Search by both type=invite AND invite-id in one query
                 List<ImapClient.MailSummary> matches = imap.searchByInviteId(inviteId, 1);
                 if (matches.isEmpty()) {
-                    System.err.println("No invite found with invite-id=" + inviteId);
+                    log.error("No invite found with invite-id={}", inviteId);
                     return;
                 }
-
+                log.info("Found {} invites with invite-id={}", matches.size(), inviteId);
                 ImapClient.MailSummary invite = matches.get(0);
                 Map<String, List<String>> headers = imap.fetchAllHeadersByUid(invite.uid());
 
@@ -71,30 +75,30 @@ public final class AckInviCmd implements Runnable {
                 inviterXPub = first(headers, "X-ZKEmails-PubKey-X25519");
 
                 if (inviterEmail == null) {
-                    System.err.println("Could not parse inviter email from: " + invite.from());
+                    log.error("Could not parse inviter email from: {}", invite.from());
                     return;
                 }
                 if (inviterFp == null || inviterEdPub == null || inviterXPub == null) {
-                    System.err.println("Invite missing key headers (Fingerprint/Ed25519/X25519).");
+                    log.error("Invite missing key headers (Fingerprint/Ed25519/X25519).");
                     return;
                 }
 
-                System.out.println("Found invite from " + inviterEmail + " subject=" + subject);
+                log.info("Found invite from {} subject={}", inviterEmail, subject);
             }
 
             context.contacts().upsertKeys(inviterEmail, "ready", inviterFp, inviterEdPub, inviterXPub);
-            System.out.println("Stored inviter keys in contacts.json (TOFU pin).");
-            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
+            log.info("Stored inviter keys in contacts.json (TOFU pin).");
+            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, resolvedPassword))) {
                 smtp.sendAcceptWithKeys(cfg.email, inviterEmail, inviteId,
                         myKeys.fingerprintHex(), myKeys.ed25519PublicB64(), myKeys.x25519PublicB64());
             }
-            System.out.println("Sent ACCEPT to " + inviterEmail + " (your keys gossiped).");
+            log.info("Sent ACCEPT to {} (your keys gossiped).", inviterEmail);
             context.invites().ensureIncoming(inviteId, inviterEmail, cfg.email, subject);
             context.invites().markIncomingAcked(inviteId);
-            System.out.println("Marked invite as acked locally (invites.json)");
+            log.info("Marked invite as acked locally (invites.json)");
 
         } catch (Exception e) {
-            System.err.println("Ack invi failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            log.error("Ack invi failed: {} - {} - {}", e.getClass().getSimpleName(), e.getMessage(), e.getStackTrace());
         }
     }
 

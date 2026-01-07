@@ -1,6 +1,8 @@
 package me.toymail.zkemails.crypto;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
@@ -21,6 +23,8 @@ import java.util.Base64;
  * - Auth: Ed25519 signature over canonical bytes
  */
 public final class CryptoBox {
+    private static final Logger log = LoggerFactory.getLogger(CryptoBox.class);
+
     static {
         if (Security.getProvider("BC") == null) Security.addProvider(new BouncyCastleProvider());
     }
@@ -47,7 +51,7 @@ public final class CryptoBox {
                 plaintext.getBytes(StandardCharsets.UTF_8));
 
         KeyPair ephem = x25519KeyPair();
-        System.out.println("[ENCRYPT] Ephemeral public key (raw): " + Base64.getEncoder().encodeToString(ephem.getPublic().getEncoded()));
+        log.debug("[ENCRYPT] Ephemeral public key (raw): {}", Base64.getEncoder().encodeToString(ephem.getPublic().getEncoded()));
 
         PublicKey recipientPub = KeyFactory.getInstance("X25519", "BC")
                 .generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(recipientX25519PubB64)));
@@ -109,7 +113,7 @@ public final class CryptoBox {
         }
 
         byte[] ephemPubBytes = Base64.getDecoder().decode(p.ephemX25519PubB64());
-        System.out.println("[DECRYPT] Ephemeral public key (raw): " + Base64.getEncoder().encodeToString(ephemPubBytes));
+        log.debug("[DECRYPT] Ephemeral public key (raw): {}", Base64.getEncoder().encodeToString(ephemPubBytes));
         PublicKey ephemPub = KeyFactory.getInstance("X25519", "BC")
                 .generatePublic(new X509EncodedKeySpec(ephemPubBytes));
 

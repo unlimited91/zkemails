@@ -3,6 +3,8 @@ package me.toymail.zkemails;
 import jakarta.mail.*;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Date;
 import java.util.Map;
@@ -14,6 +16,7 @@ import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.InviteStore;
 
 public final class SmtpClient implements AutoCloseable {
+    private static final Logger log = LoggerFactory.getLogger(SmtpClient.class);
 
     public record SmtpConfig(String host, int port, String username, String password) {}
 
@@ -63,12 +66,67 @@ public final class SmtpClient implements AutoCloseable {
                              InviteStore inviteStore) throws MessagingException {
         String inviteId = UUID.randomUUID().toString();
         String subject = "🔒 Private chat? (zkemails)";
-        String body =
-                "Your friend wants to chat in private using zkemails.\n\n" +
-                        "If you want to enable encrypted emails:\n" +
-                        "1) Install zkemails\n" +
-                        "2) Reply to this email with: yes satoshi\n\n" +
-                        "(This is a toy protocol invite.)\n";
+        String body = String.format("""
+                Hey! I'd like to chat with you privately using zkemails.
+
+                Invitation ID: %s
+
+                What is zkemails?
+                -----------------
+                zkemails is an end-to-end encrypted multi profile email client that works on top of
+                regular email. Read more: https://musings.sayanr.com/2025/12/26/zkmails.html
+                
+                The password you use to init is NOT the same as your email password that you use to login to your gmail.
+                You have to create something called an app password and use the same.
+                
+                To create an app password, visit https://myaccount.google.com/apppasswords. If your gmail does not allow you
+                to access this page this means that your gmail account does not have 2FA setup.
+                
+                Setting up 2FA
+                --------------------------------
+                1. Visit https://myaccount.google.com/
+                2. Click on the Security and sign-in option on the left hand panel
+                3. Enable 2FA for the account
+                4. You should be able to access https://myaccount.google.com/apppasswords
+                5. Create an app password for zkemails. Now the app password you create will look something like this
+                   "xxxx yyyy zzzz". Remove the whitespaces in between to make a single string like "xxxxyyyyzzzz". This
+                   whitespace removed string is your zkemails password for the corresponding email-id.
+
+                Getting Started:
+                ----------------
+                1. Install zkemails:
+                   curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/0.0.1.beta1/install.sh | bash
+
+                2. Initialize with your email:
+                   zkemails init --email %s --password
+
+                3. Accept this invitation using the invitation id mentioned above:
+                   zkemails ack invi --invite-id %s --password
+                
+                4. You can see the profiles added and switch the relevant profile. A profile is an email you have
+                    initialized zkemails with via zkemails init.
+                   zkemails prof ls (List profiles)
+                   zkemails prof set <profile-name> (Set profile)
+
+                Using zkemails:
+                ---------------
+                View your inbox:
+                   zkemails inbox --password --limit 20
+
+                Send an encrypted message:
+                   zkemails send-message --to %s --subject "Hello" --body "Your message" --password
+
+                List encrypted messages:
+                   zkemails rem --password
+
+                Read/decrypt a specific message:
+                   zkemails rem --message <message-id> --password
+                   (Get the message-id from 'zkemails rem --password')
+
+                That's it! Once you accept, we can exchange end-to-end encrypted messages.
+
+                For more learning use zkemails --help
+                """, inviteId, toEmail, inviteId, fromEmail);
 
         MimeMessage msg = new MimeMessage(session);
         msg.setFrom(new InternetAddress(fromEmail));
@@ -90,7 +148,7 @@ public final class SmtpClient implements AutoCloseable {
         try {
             if (inviteStore != null) inviteStore.addOutgoing(inviteId, fromEmail, toEmail, subject);
         } catch (Exception e) {
-            System.err.println("⚠️ Sent invite but failed to persist invites.json: " + e.getMessage());
+            log.warn("Sent invite but failed to persist invites.json: {}", e.getMessage());
         }
         return inviteId;
     }

@@ -3,22 +3,24 @@ package me.toymail.zkemails.commands;
 import me.toymail.zkemails.ImapClient;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.StoreContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.util.List;
 import java.util.Map;
 
-@Command(name = "ack", description = "Sync ACCEPT messages and store sender public keys for future encrypted communication.")
+@Command(name = "sync-ack", description = "Sync ACCEPT messages and store sender public keys for future encrypted communication.")
 public final class SyncAckCmd implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(SyncAckCmd.class);
     private final StoreContext context;
 
     public SyncAckCmd(StoreContext context) {
         this.context = context;
     }
 
-    @Option(names="--password", required = true, interactive = true,
-            description = "App password / password (not saved)")
+    @Option(names="--password", description = "App password (optional if saved to keychain)")
     String password;
 
     @Option(names="--limit", defaultValue = "200")
@@ -28,18 +30,20 @@ public final class SyncAckCmd implements Runnable {
     public void run() {
         try {
             if (!context.hasActiveProfile()) {
-                System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
+                log.error("No active profile set or profile directory missing. Use 'prof' to set a profile.");
                 return;
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                System.err.println("Not initialized. Run: zkemails init ...");
+                log.error("Not initialized. Run: zkemails init ...");
                 return;
             }
 
+            String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
+
             int updated = 0;
             try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
-                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
+                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, resolvedPassword
             ))) {
                 List<ImapClient.MailSummary> accepts = imap.searchHeaderEquals("X-ZKEmails-Type", "accept", limit);
                 for (var m : accepts) {
@@ -57,9 +61,9 @@ public final class SyncAckCmd implements Runnable {
                 }
             }
 
-            System.out.println("sync ack complete. Contacts updated: " + updated);
+            log.info("sync ack complete. Contacts updated: {}", updated);
         } catch (Exception e) {
-            System.err.println("sync ack failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            log.error("sync ack failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
         }
     }
 
