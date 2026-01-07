@@ -1,15 +1,21 @@
 package me.toymail.zkemails.store;
 
+import me.toymail.zkemails.PasswordResolver;
+
 import java.io.IOException;
 
 public final class StoreContext {
     private final ProfileConfigStore profileConfigStore;
+    private final CredentialStore credentialStore;
+    private final PasswordResolver passwordResolver;
     private ZkStore zkStore;
     private ContactsStore contactsStore;
     private InviteStore inviteStore;
 
     private StoreContext(ProfileConfigStore profileConfigStore) {
         this.profileConfigStore = profileConfigStore;
+        this.credentialStore = new CredentialStore();
+        this.passwordResolver = new PasswordResolver(credentialStore);
     }
 
     public static StoreContext initialize() {
@@ -58,6 +64,14 @@ public final class StoreContext {
 
     public InviteStore invites() {
         return inviteStore;
+    }
+
+    public CredentialStore credentials() {
+        return credentialStore;
+    }
+
+    public PasswordResolver passwordResolver() {
+        return passwordResolver;
     }
 
     public boolean hasActiveProfile() {

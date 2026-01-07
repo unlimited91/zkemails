@@ -25,8 +25,7 @@ public final class AckInviCmd implements Runnable {
     @Option(names="--invite-id", required = true, description = "Invite ID to acknowledge")
     String inviteId;
 
-    @Option(names="--password", required = true, interactive = true,
-            description = "App password / password (not saved)")
+    @Option(names="--password", description = "App password (optional if saved to keychain)")
     String password;
 
     @Override
@@ -48,6 +47,8 @@ public final class AckInviCmd implements Runnable {
                 return;
             }
 
+            String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
+
             String inviterEmail;
             String subject;
             String inviterFp;
@@ -55,7 +56,7 @@ public final class AckInviCmd implements Runnable {
             String inviterXPub;
 
             try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
-                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
+                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, resolvedPassword
             ))) {
                 // Search by both type=invite AND invite-id in one query
                 List<ImapClient.MailSummary> matches = imap.searchByInviteId(inviteId, 1);
@@ -87,7 +88,7 @@ public final class AckInviCmd implements Runnable {
 
             context.contacts().upsertKeys(inviterEmail, "ready", inviterFp, inviterEdPub, inviterXPub);
             log.info("Stored inviter keys in contacts.json (TOFU pin).");
-            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
+            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, resolvedPassword))) {
                 smtp.sendAcceptWithKeys(cfg.email, inviterEmail, inviteId,
                         myKeys.fingerprintHex(), myKeys.ed25519PublicB64(), myKeys.x25519PublicB64());
             }

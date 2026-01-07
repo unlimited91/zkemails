@@ -20,8 +20,7 @@ public final class SyncAckCmd implements Runnable {
         this.context = context;
     }
 
-    @Option(names="--password", required = true, interactive = true,
-            description = "App password / password (not saved)")
+    @Option(names="--password", description = "App password (optional if saved to keychain)")
     String password;
 
     @Option(names="--limit", defaultValue = "200")
@@ -40,9 +39,11 @@ public final class SyncAckCmd implements Runnable {
                 return;
             }
 
+            String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
+
             int updated = 0;
             try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
-                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
+                    cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, resolvedPassword
             ))) {
                 List<ImapClient.MailSummary> accepts = imap.searchHeaderEquals("X-ZKEmails-Type", "accept", limit);
                 for (var m : accepts) {

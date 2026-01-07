@@ -23,7 +23,7 @@ public class ReadEncryptedMessageCmd implements Runnable {
         this.context = context;
     }
 
-    @Option(names = "--password", required = true, interactive = true, description = "App password / password (not saved)")
+    @Option(names = "--password", description = "App password (optional if saved to keychain)")
     String password;
 
     @Option(names = "--message", description = "Show decrypted message by messageId")
@@ -55,7 +55,10 @@ public class ReadEncryptedMessageCmd implements Runnable {
             log.error("Missing keys.json. Re-run init.");
             return;
         }
-        try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password))) {
+
+        String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
+
+        try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, resolvedPassword))) {
             if (messageId == null) {
                 // rem list
                 List<ImapClient.MailSummary> msgs = imap.searchHeaderEquals("X-ZKEmails-Type", "msg", limit);

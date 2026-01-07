@@ -21,8 +21,7 @@ public final class SendInviteCmd implements Runnable {
     @Option(names="--to", required = true)
     String to;
 
-    @Option(names="--password", required = true, interactive = true,
-            description = "App password / password (not saved)")
+    @Option(names="--password", description = "App password (optional if saved to keychain)")
     String password;
 
     @Override
@@ -46,7 +45,9 @@ public final class SendInviteCmd implements Runnable {
 
             context.contacts().upsertBasic(to, "invited-out");
 
-            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
+            String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
+
+            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, resolvedPassword))) {
                 String inviteId = smtp.sendInvite(cfg.email, to, keys, context.invites());
                 log.info("Sent invite to {} inviteId={}", to, inviteId);
                 log.info("Contact stored/updated in contacts.json (status=invited-out)");
