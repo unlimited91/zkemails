@@ -1,23 +1,57 @@
 package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.ImapClient;
+import me.toymail.zkemails.SmtpClient;
 import me.toymail.zkemails.crypto.CryptoBox;
 import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.ContactsStore;
 import me.toymail.zkemails.store.StoreContext;
+import me.toymail.zkemails.tui.MessageEditor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.*;
 
-@Command(name = "rem", description = "Read encrypted messages (list or decrypt by messageId)")
+@Command(name = "rem", description = "Read encrypted messages (list, view, thread, or reply)",
+        footer = {
+            "",
+            "Examples:",
+            "  zkemails rem                  List recent encrypted messages",
+            "  zkemails rem --message 42     View and decrypt message with ID 42",
+            "  zkemails rem --thread 42      View entire conversation containing message 42",
+            "  zkemails rem --reply 42       Reply to message 42 (opens editor)",
+            "",
+            "Sample thread output (zkemails rem --thread 42):",
+            "  === Thread: Hello (3 messages) ===",
+            "",
+            "  [ID=38] From: alice@example.com | Date: 2025-01-06 10:30",
+            "  Subject: Hello",
+            "",
+            "  Hi! How are you?",
+            "",
+            "  ---",
+            "",
+            "  [ID=42] From: bob@example.com | Date: 2025-01-07 14:15",
+            "  Subject: Re: Hello",
+            "",
+            "  I'm good, thanks!",
+            "",
+            "  ---",
+            "",
+            "  [ID=45] From: alice@example.com | Date: 2025-01-08 09:00",
+            "  Subject: Re: Hello",
+            "",
+            "  Great to hear!"
+        })
 public class ReadEncryptedMessageCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(ReadEncryptedMessageCmd.class);
     private final StoreContext context;
+    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm");
 
     public ReadEncryptedMessageCmd(StoreContext context) {
         this.context = context;
@@ -26,10 +60,16 @@ public class ReadEncryptedMessageCmd implements Runnable {
     @Option(names = "--password", description = "App password (optional if saved to keychain)")
     String password;
 
-    @Option(names = "--message", description = "Show decrypted message by messageId")
-    String messageId;
+    @Option(names = "--message", paramLabel = "<id>", description = "View and decrypt a specific message by its ID")
+    Long messageId;
 
-    @Option(names = "--limit", defaultValue = "20")
+    @Option(names = "--thread", paramLabel = "<id>", description = "View entire conversation thread containing the message")
+    Long threadId;
+
+    @Option(names = "--reply", paramLabel = "<id>", description = "Reply to a message (opens editor with quoted original)")
+    Long replyTo;
+
+    @Option(names = "--limit", defaultValue = "20", description = "Maximum number of messages to display (default: ${DEFAULT-VALUE})")
     int limit;
 
     @Override
@@ -59,98 +99,247 @@ public class ReadEncryptedMessageCmd implements Runnable {
         String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
 
         try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, resolvedPassword))) {
-            if (messageId == null) {
-                // rem list
-                List<ImapClient.MailSummary> msgs = imap.searchHeaderEquals("X-ZKEmails-Type", "msg", limit);
-                if (msgs.isEmpty()) {
-                    log.info("No encrypted messages found.");
-                    return;
-                }
-                for (var m : msgs) {
-                    Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(m.uid());
-                    String sig = first(hdrs, "X-ZKEmails-Sig");
-                    log.info("messageID={} | UID={} | from={} | subject={} | date={}", sig, m.uid(), m.from(), m.subject(), m.received());
-                }
+
+            if (replyTo != null) {
+                // Reply mode
+                handleReply(imap, cfg, myKeys, resolvedPassword);
+            } else if (threadId != null) {
+                // Thread view mode
+                handleThread(imap, cfg, myKeys);
+            } else if (messageId != null) {
+                // Single message view mode
+                handleSingleMessage(imap, cfg, myKeys);
             } else {
-                // rem --message <messageId>
-                List<ImapClient.MailSummary> msgs = imap.searchHeaderEquals("X-ZKEmails-Type", "msg", 100);
-                ImapClient.MailSummary found = null;
-                Map<String, List<String>> foundHdrs = null;
-                for (var m : msgs) {
-                    Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(m.uid());
-                    String sig = first(hdrs, "X-ZKEmails-Sig");
-                    if (messageId.equals(sig)) {
-                        found = m;
-                        foundHdrs = hdrs;
-                        break;
-                    }
-                }
-                if (found == null) {
-                    log.error("No message found with messageId={}", messageId);
-                    return;
-                }
-                // Extract encryption headers
-                String ephemX25519PubB64 = first(foundHdrs, "X-ZKEmails-Ephem-X25519");
-                String wrappedKeyB64 = first(foundHdrs, "X-ZKEmails-WrappedKey");
-                String wrappedKeyNonceB64 = first(foundHdrs, "X-ZKEmails-WrappedKey-Nonce");
-                String msgNonceB64 = first(foundHdrs, "X-ZKEmails-Nonce");
-                String ciphertextB64 = first(foundHdrs, "X-ZKEmails-Ciphertext");
-                String sigB64 = first(foundHdrs, "X-ZKEmails-Sig");
-                String senderFpHex = first(foundHdrs, "X-ZKEmails-Sender-Fp");
-                String recipientFpHex = first(foundHdrs, "X-ZKEmails-Recipient-Fp");
-                String fromEmail = found.from();
-                String toEmail = cfg.email;
-                String subject = found.subject();
-                ContactsStore.Contact c = context.contacts().get(fromEmail);
-                // Check for missing or empty headers
-//                Map<String, String> required = new LinkedHashMap<>();
-//                required.put("X-ZKEmails-Ephem-X25519", ephemX25519PubB64);
-//                required.put("X-ZKEmails-WrappedKey", wrappedKeyB64);
-//                required.put("X-ZKEmails-WrappedKey-Nonce", wrappedKeyNonceB64);
-//                required.put("X-ZKEmails-Nonce", msgNonceB64);
-//                required.put("X-ZKEmails-Ciphertext", ciphertextB64);
-//                required.put("X-ZKEmails-Sig", sigB64);
-//                required.put("X-ZKEmails-Sender-Fp", senderFpHex);
-//                boolean missing = false;
-//                for (var entry : required.entrySet()) {
-//                    String val = entry.getValue();
-//                    if (val == null || val.trim().isEmpty()) {
-//                        System.err.println("Missing or empty header: " + entry.getKey() + " (value='" + val + "')");
-//                        missing = true;
-//                    }
-//                }
-//                if (missing) {
-//                    System.err.println("Available headers:");
-//                    for (var k : foundHdrs.keySet()) {
-//                        System.err.println(" " + k + ": " + foundHdrs.get(k));
-//                    }
-//                    return;
-//                }
-//                String senderEd25519PubB64 = first(foundHdrs, "X-ZKEmails-PubKey-Ed25519");
-//                if (senderEd25519PubB64 == null) {
-//                    System.err.println("⚠️  Warning: Sender's Ed25519 public key (X-ZKEmails-PubKey-Ed25519) not found in headers. Signature verification will be skipped.");
-//                }
-                try {
-                    CryptoBox.EncryptedPayload payload = new CryptoBox.EncryptedPayload(
-                            ephemX25519PubB64, wrappedKeyB64, wrappedKeyNonceB64, msgNonceB64, ciphertextB64, sigB64, recipientFpHex
-                    );
-                    String plaintext = CryptoBox.decryptForRecipient(
-                            fromEmail,
-                            toEmail,
-                            subject,
-                            payload,
-                            myKeys.x25519PrivateB64(),
-                            c.ed25519PublicB64
-//                            senderEd25519PubB64 // use sender's pubkey if available, else null
-                    );
-                    log.info("Decrypted message:\n{}", plaintext);
-                } catch (Exception e) {
-                    log.error("Decryption failed: {}", e.getMessage());
-                }
+                // List mode
+                handleList(imap);
             }
+
         } catch (Exception e) {
             log.error("Error: {}", e.getMessage());
         }
+    }
+
+    private void handleList(ImapClient imap) throws Exception {
+        List<ImapClient.MailSummary> msgs = imap.searchHeaderEquals("X-ZKEmails-Type", "msg", limit);
+        if (msgs.isEmpty()) {
+            log.info("No encrypted messages found.");
+            return;
+        }
+        for (var m : msgs) {
+            String date = m.received() != null ? DATE_FORMAT.format(m.received()) : "unknown";
+            log.info("ID={} | from={} | subject={} | date={}", m.uid(), m.from(), m.subject(), date);
+        }
+    }
+
+    private void handleSingleMessage(ImapClient imap, Config cfg, IdentityKeys.KeyBundle myKeys) throws Exception {
+        ImapClient.MailSummary msg = imap.getMessageByUid(messageId);
+        if (msg == null) {
+            log.error("No message found with ID={}", messageId);
+            return;
+        }
+
+        String plaintext = decryptMessage(imap, msg, cfg, myKeys);
+        if (plaintext != null) {
+            log.info("From: {}", msg.from());
+            log.info("Subject: {}", msg.subject());
+            log.info("Date: {}", msg.received() != null ? DATE_FORMAT.format(msg.received()) : "unknown");
+            log.info("---");
+            log.info("{}", plaintext);
+        }
+    }
+
+    private void handleThread(ImapClient imap, Config cfg, IdentityKeys.KeyBundle myKeys) throws Exception {
+        // Build the set of Message-IDs in this thread
+        Set<String> threadIds = imap.buildThreadIdSet(threadId);
+        if (threadIds.isEmpty()) {
+            // Fallback: just show the single message
+            log.warn("No thread information found, showing single message.");
+            messageId = threadId;
+            handleSingleMessage(imap, cfg, myKeys);
+            return;
+        }
+
+        // Find all messages in the thread
+        List<ImapClient.MailSummary> threadMsgs = imap.searchThread(threadIds, limit);
+        if (threadMsgs.isEmpty()) {
+            log.info("No messages found in thread.");
+            return;
+        }
+
+        // Get base subject (strip "Re: " prefixes)
+        String baseSubject = threadMsgs.get(0).subject();
+        if (baseSubject != null) {
+            baseSubject = baseSubject.replaceAll("(?i)^(Re:\\s*)+", "").trim();
+        }
+
+        log.info("=== Thread: {} ({} messages) ===", baseSubject, threadMsgs.size());
+        log.info("");
+
+        for (var m : threadMsgs) {
+            String date = m.received() != null ? DATE_FORMAT.format(m.received()) : "unknown";
+            log.info("[ID={}] From: {} | Date: {}", m.uid(), m.from(), date);
+            log.info("Subject: {}", m.subject());
+            log.info("");
+
+            String plaintext = decryptMessage(imap, m, cfg, myKeys);
+            if (plaintext != null) {
+                log.info("{}", plaintext);
+            } else {
+                log.info("(could not decrypt)");
+            }
+
+            log.info("");
+            log.info("---");
+            log.info("");
+        }
+    }
+
+    private void handleReply(ImapClient imap, Config cfg, IdentityKeys.KeyBundle myKeys, String resolvedPassword) throws Exception {
+        // Get the original message
+        ImapClient.MailSummary msg = imap.getMessageByUid(replyTo);
+        if (msg == null) {
+            log.error("No message found with ID={}", replyTo);
+            return;
+        }
+
+        // Decrypt the original message for quoting
+        String originalPlaintext = decryptMessage(imap, msg, cfg, myKeys);
+        if (originalPlaintext == null) {
+            log.error("Could not decrypt original message for quoting.");
+            return;
+        }
+
+        // Get sender email (this is who we're replying to)
+        String replyToEmail = extractEmail(msg.from());
+        if (replyToEmail == null) {
+            log.error("Could not extract email from: {}", msg.from());
+            return;
+        }
+
+        // Check if we have keys for this contact
+        ContactsStore.Contact contact = context.contacts().get(replyToEmail);
+        if (contact == null || contact.x25519PublicB64 == null || contact.fingerprintHex == null) {
+            log.error("No pinned X25519 key for contact: {}", replyToEmail);
+            log.error("Run: zkemails sync-ack (or invi if they invited you).");
+            return;
+        }
+
+        // Build reply subject
+        String replySubject = msg.subject();
+        if (replySubject != null && !replySubject.toLowerCase().startsWith("re:")) {
+            replySubject = "Re: " + replySubject;
+        }
+
+        // Build quoted body
+        String quotedBody = quoteText(originalPlaintext);
+
+        // Get threading info
+        String originalMessageId = imap.getMessageId(replyTo);
+        String originalReferences = imap.getReferences(replyTo);
+
+        // Build new References header: original References + original Message-ID
+        String newReferences = originalReferences != null ? originalReferences + " " : "";
+        if (originalMessageId != null) {
+            newReferences += originalMessageId;
+        }
+        newReferences = newReferences.trim();
+        if (newReferences.isEmpty()) newReferences = null;
+
+        // Open editor
+        MessageEditor.EditorResult result;
+        try {
+            result = MessageEditor.open(replyToEmail, replySubject, quotedBody);
+        } catch (IllegalStateException e) {
+            log.error("{}", e.getMessage());
+            return;
+        }
+
+        if (result.isCancelled()) {
+            log.info("Reply cancelled.");
+            return;
+        }
+
+        String body = result.getBody();
+        if (body == null || body.isBlank()) {
+            log.error("Cannot send empty message.");
+            return;
+        }
+
+        // Send the reply
+        try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, resolvedPassword))) {
+            smtp.sendEncryptedMessage(
+                    cfg.email,
+                    replyToEmail,
+                    replySubject,
+                    body,
+                    myKeys,
+                    contact.fingerprintHex,
+                    contact.x25519PublicB64,
+                    originalMessageId,
+                    newReferences
+            );
+        }
+
+        log.info("Reply sent to {}", replyToEmail);
+    }
+
+    private String decryptMessage(ImapClient imap, ImapClient.MailSummary msg, Config cfg, IdentityKeys.KeyBundle myKeys) {
+        try {
+            Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(msg.uid());
+
+            String ephemX25519PubB64 = first(hdrs, "X-ZKEmails-Ephem-X25519");
+            String wrappedKeyB64 = first(hdrs, "X-ZKEmails-WrappedKey");
+            String wrappedKeyNonceB64 = first(hdrs, "X-ZKEmails-WrappedKey-Nonce");
+            String msgNonceB64 = first(hdrs, "X-ZKEmails-Nonce");
+            String ciphertextB64 = first(hdrs, "X-ZKEmails-Ciphertext");
+            String sigB64 = first(hdrs, "X-ZKEmails-Sig");
+            String recipientFpHex = first(hdrs, "X-ZKEmails-Recipient-Fp");
+
+            String fromEmail = extractEmail(msg.from());
+            ContactsStore.Contact contact = context.contacts().get(fromEmail);
+            if (contact == null || contact.ed25519PublicB64 == null) {
+                log.warn("No contact found for sender: {}", fromEmail);
+                return null;
+            }
+
+            CryptoBox.EncryptedPayload payload = new CryptoBox.EncryptedPayload(
+                    ephemX25519PubB64, wrappedKeyB64, wrappedKeyNonceB64,
+                    msgNonceB64, ciphertextB64, sigB64, recipientFpHex
+            );
+
+            return CryptoBox.decryptForRecipient(
+                    fromEmail,
+                    cfg.email,
+                    msg.subject(),
+                    payload,
+                    myKeys.x25519PrivateB64(),
+                    contact.ed25519PublicB64
+            );
+        } catch (Exception e) {
+            log.debug("Decryption failed for message {}: {}", msg.uid(), e.getMessage());
+            return null;
+        }
+    }
+
+    private String extractEmail(String from) {
+        if (from == null) return null;
+        // Handle formats like "Name <email@example.com>" or just "email@example.com"
+        int start = from.indexOf('<');
+        int end = from.indexOf('>');
+        if (start >= 0 && end > start) {
+            return from.substring(start + 1, end).trim();
+        }
+        return from.trim();
+    }
+
+    private String quoteText(String text) {
+        if (text == null || text.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String line : text.split("\n")) {
+            sb.append("> ").append(line).append("\n");
+        }
+        sb.append("\n");
+        return sb.toString();
     }
 
     private static String first(Map<String, List<String>> map, String key) {

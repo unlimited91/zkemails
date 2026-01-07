@@ -176,9 +176,16 @@ public final class SmtpClient implements AutoCloseable {
         Transport.send(msg);
     }
 
+    /**
+     * Send an encrypted message with optional threading headers.
+     *
+     * @param inReplyTo  Message-ID of the message being replied to (null for new messages)
+     * @param references Thread reference chain (null for new messages)
+     */
     public void sendEncryptedMessage(String fromEmail, String toEmail, String subject, String plaintext,
                                      IdentityKeys.KeyBundle senderKeys,
-                                     String recipientFpHex, String recipientXPubB64) throws Exception {
+                                     String recipientFpHex, String recipientXPubB64,
+                                     String inReplyTo, String references) throws Exception {
 
         CryptoBox.EncryptedPayload p = CryptoBox.encryptToRecipient(
                 fromEmail, toEmail, subject, plaintext, senderKeys, recipientFpHex, recipientXPubB64
@@ -190,7 +197,14 @@ public final class SmtpClient implements AutoCloseable {
         msg.setSubject(subject, "UTF-8");
         msg.setSentDate(new Date());
         msg.setText("Encrypted message (zkemails).", "UTF-8");
-//        msg.setText(p.toString(),"UTF-8");
+
+        // Threading headers for replies
+        if (inReplyTo != null && !inReplyTo.isBlank()) {
+            msg.setHeader("In-Reply-To", inReplyTo);
+        }
+        if (references != null && !references.isBlank()) {
+            msg.setHeader("References", references);
+        }
 
         msg.setHeader("X-ZKEmails-Type", "msg");
         msg.setHeader("X-ZKEmails-Enc", "x25519+hkdf+aesgcm;sig=ed25519");
@@ -206,6 +220,15 @@ public final class SmtpClient implements AutoCloseable {
         msg.setHeader("X-ZKEmails-Sig", p.sigB64());
 
         Transport.send(msg);
+    }
+
+    /**
+     * Send an encrypted message (convenience method for new messages without threading).
+     */
+    public void sendEncryptedMessage(String fromEmail, String toEmail, String subject, String plaintext,
+                                     IdentityKeys.KeyBundle senderKeys,
+                                     String recipientFpHex, String recipientXPubB64) throws Exception {
+        sendEncryptedMessage(fromEmail, toEmail, subject, plaintext, senderKeys, recipientFpHex, recipientXPubB64, null, null);
     }
 
     public void sendPlain(String fromEmail, String toEmail, String subject, String body,
