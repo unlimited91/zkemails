@@ -5,6 +5,7 @@ import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.ContactsStore;
 import me.toymail.zkemails.store.StoreContext;
+import me.toymail.zkemails.tui.MessageEditor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -19,13 +20,13 @@ public final class SendMessageCmd implements Runnable {
         this.context = context;
     }
 
-    @Option(names="--to", required = true)
+    @Option(names="--to", description = "Recipient email (opens editor if not provided)")
     String to;
 
-    @Option(names="--subject", required = true)
+    @Option(names="--subject", description = "Subject line (opens editor if not provided)")
     String subject;
 
-    @Option(names="--body", required = true)
+    @Option(names="--body", description = "Message body (opens editor if not provided)")
     String body;
 
     @Option(names="--password", description = "App password (optional if saved to keychain)")
@@ -50,9 +51,52 @@ public final class SendMessageCmd implements Runnable {
                 return;
             }
 
-            ContactsStore.Contact c = context.contacts().get(to);
+            // Resolve to, subject, body - open editor if any are missing
+            String recipientTo = to;
+            String messageSubject = subject;
+            String messageBody = body;
+
+            boolean needsEditor = (recipientTo == null || recipientTo.isBlank()) ||
+                                  (messageSubject == null || messageSubject.isBlank()) ||
+                                  (messageBody == null || messageBody.isBlank());
+
+            if (needsEditor) {
+                try {
+                    MessageEditor.EditorResult result = MessageEditor.open(
+                        recipientTo,
+                        messageSubject,
+                        messageBody
+                    );
+                    if (result.isCancelled()) {
+                        log.info("Message cancelled.");
+                        return;
+                    }
+                    recipientTo = result.getTo();
+                    messageSubject = result.getSubject();
+                    messageBody = result.getBody();
+                } catch (IllegalStateException e) {
+                    log.error("{}", e.getMessage());
+                    return;
+                }
+            }
+
+            // Validate all fields
+            if (recipientTo == null || recipientTo.isBlank()) {
+                log.error("Recipient (--to) is required.");
+                return;
+            }
+            if (messageSubject == null || messageSubject.isBlank()) {
+                log.error("Subject (--subject) is required.");
+                return;
+            }
+            if (messageBody == null || messageBody.isBlank()) {
+                log.error("Cannot send empty message.");
+                return;
+            }
+
+            ContactsStore.Contact c = context.contacts().get(recipientTo);
             if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
-                log.error("No pinned X25519 key for contact: {}", to);
+                log.error("No pinned X25519 key for contact: {}", recipientTo);
                 log.error("Run: zkemails sync-ack (or invi if they invited you).");
                 return;
             }
@@ -60,10 +104,10 @@ public final class SendMessageCmd implements Runnable {
             String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
 
             try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, resolvedPassword))) {
-                smtp.sendEncryptedMessage(cfg.email, to, subject, body, myKeys, c.fingerprintHex, c.x25519PublicB64);
+                smtp.sendEncryptedMessage(cfg.email, recipientTo, messageSubject, messageBody, myKeys, c.fingerprintHex, c.x25519PublicB64);
             }
 
-            log.info("Encrypted message sent to {} (type=msg)", to);
+            log.info("Encrypted message sent to {} (type=msg)", recipientTo);
         } catch (Exception e) {
             log.error("send-message failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
         }
