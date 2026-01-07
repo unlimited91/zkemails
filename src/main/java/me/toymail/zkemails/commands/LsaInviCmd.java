@@ -2,6 +2,8 @@ package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.store.InviteStore;
 import me.toymail.zkemails.store.StoreContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -12,6 +14,7 @@ import java.util.List;
 
 @Command(name = "invi", description = "List acknowledged invites. This is fetched from local store")
 public final class LsaInviCmd implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(LsaInviCmd.class);
     private final StoreContext context;
 
     public LsaInviCmd(StoreContext context) {
@@ -25,7 +28,7 @@ public final class LsaInviCmd implements Runnable {
     public void run() {
         try {
             if (!context.hasActiveProfile()) {
-                System.err.println("No active profile set or profile directory missing. Use 'prof' to set a profile.");
+                log.error("No active profile set or profile directory missing. Use 'prof' to set a profile.");
                 return;
             }
             context.zkStore().ensure();
@@ -34,25 +37,24 @@ public final class LsaInviCmd implements Runnable {
             all.removeIf(i -> !"acked".equalsIgnoreCase(i.status));
 
             if (all.isEmpty()) {
-                System.out.println("(no acked incoming invites found locally)");
+                log.info("(no acked incoming invites found locally)");
                 return;
             }
 
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
                     .withZone(ZoneId.systemDefault());
 
-            System.out.println("invite-id | from | created | status | subject");
-            System.out.println("-----------------------------------------------------------------------");
+            log.info("invite-id | from | created | status | subject");
+            log.info("-----------------------------------------------------------------------");
 
             int n = Math.min(limit, all.size());
             for (int i = 0; i < n; i++) {
                 var x = all.get(i);
                 String created = fmt.format(Instant.ofEpochSecond(x.createdEpochSec));
-                System.out.printf("%s | %s | %s | %s | %s%n",
-                        x.inviteId, x.fromEmail, created, x.status, x.subject);
+                log.info("{} | {} | {} | {} | {}", x.inviteId, x.fromEmail, created, x.status, x.subject);
             }
         } catch (Exception e) {
-            System.err.println("lsa invi failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            log.error("lsa invi failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());
         }
     }
 }

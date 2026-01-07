@@ -2,13 +2,19 @@ package me.toymail.zkemails;
 
 import jakarta.mail.*;
 import jakarta.mail.search.AndTerm;
+import jakarta.mail.search.ComparisonTerm;
 import jakarta.mail.search.FlagTerm;
 import jakarta.mail.search.HeaderTerm;
+import jakarta.mail.search.ReceivedDateTerm;
 import jakarta.mail.search.SearchTerm;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
 public final class ImapClient implements AutoCloseable {
+
+    private static final Logger log = LoggerFactory.getLogger(ImapClient.class);
 
     public record ImapConfig(String host, int port, boolean ssl, String username, String password) {}
 
@@ -24,24 +30,33 @@ public final class ImapClient implements AutoCloseable {
         this.uidFolder = (UIDFolder) inbox;
     }
 
+    private static final int SEARCH_DAYS_LIMIT = 10;
+
     public static ImapClient connect(ImapConfig cfg) throws MessagingException {
         Properties props = new Properties();
         props.put("mail.store.protocol", cfg.ssl() ? "imaps" : "imap");
 
         props.put("mail.imaps.ssl.enable", String.valueOf(cfg.ssl()));
         props.put("mail.imaps.ssl.checkserveridentity", "true");
-        props.put("mail.imaps.connectiontimeout", "10000");
-        props.put("mail.imaps.timeout", "30000");
-        props.put("mail.imaps.keepalive", "true");
+        props.put("mail.imaps.connectiontimeout", "15000");
+        props.put("mail.imaps.timeout", "120000");
+        props.put("mail.imaps.writetimeout", "60000");
+        props.put("mail.imaps.usesocketchannels", "true");
+
+        props.put("mail.imap.connectiontimeout", "15000");
+        props.put("mail.imap.timeout", "120000");
+        props.put("mail.imap.writetimeout", "60000");
 
         Session session = Session.getInstance(props);
         // session.setDebug(true);
 
         Store store = session.getStore(cfg.ssl() ? "imaps" : "imap");
         store.connect(cfg.host(), cfg.port(), cfg.username(), cfg.password());
+        log.info("Store connected: {}", store.getClass().getSimpleName());
 
         Folder inbox = store.getFolder("INBOX");
         inbox.open(Folder.READ_ONLY);
+        log.info("Opened INBOX with messages");
         if (!(inbox instanceof UIDFolder)) {
             inbox.close(false);
             store.close();
@@ -79,7 +94,13 @@ public final class ImapClient implements AutoCloseable {
     }
 
     public List<MailSummary> searchHeaderEquals(String headerName, String headerValue, int limit) throws MessagingException {
-        Message[] found = inbox.search(new HeaderTerm(headerName, headerValue));
+        Date sinceDate = daysAgo(SEARCH_DAYS_LIMIT);
+        SearchTerm term = new AndTerm(
+                new ReceivedDateTerm(ComparisonTerm.GE, sinceDate),
+                new HeaderTerm(headerName, headerValue)
+        );
+        log.debug("Searching for header {}={} since {}", headerName, headerValue, sinceDate);
+        Message[] found = inbox.search(term);
         return summarize(found, limit);
     }
 
@@ -98,12 +119,22 @@ public final class ImapClient implements AutoCloseable {
     }
 
     public List<MailSummary> searchByInviteId(String inviteId, int limit) throws MessagingException {
-        SearchTerm term = new AndTerm(
+        Date sinceDate = daysAgo(SEARCH_DAYS_LIMIT);
+        SearchTerm term = new AndTerm(new SearchTerm[]{
+                new ReceivedDateTerm(ComparisonTerm.GE, sinceDate),
                 new HeaderTerm("X-ZKEmails-Type", "invite"),
                 new HeaderTerm("X-ZKEmails-Invite-Id", inviteId)
-        );
+        });
+        log.debug("Searching for unread invite-id={} since {}", inviteId, sinceDate);
         Message[] found = inbox.search(term);
+        log.info("Found {} unread invites with invite-id={}", found.length, inviteId);
         return summarize(found, limit);
+    }
+
+    private static Date daysAgo(int days) {
+        Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.DAY_OF_MONTH, -days);
+        return cal.getTime();
     }
 
     public Map<String, List<String>> fetchAllHeadersByUid(long uid) throws MessagingException {
@@ -143,6 +174,7 @@ public final class ImapClient implements AutoCloseable {
         fp.add(FetchProfile.Item.ENVELOPE);
         fp.add(FetchProfile.Item.FLAGS);
         inbox.fetch(slice, fp);
+        log.info("Fetched {} messages", slice.length);
 
         List<MailSummary> out = new ArrayList<>(n);
         for (Message m : slice) {
