@@ -12,7 +12,16 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-@Command(name = "invi", description = "List incoming invites pending acknowledgement from the local store")
+@Command(name = "lsi", description = "List pending incoming invites",
+        footer = {
+                "",
+                "Examples:",
+                "  zke lsi              List all pending invites",
+                "  zke lsi --limit 10   Show only 10 invites",
+                "",
+                "To acknowledge an invite:",
+                "  zke ack invi --invite-id <invite-id>"
+        })
 public final class LsInviCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(LsInviCmd.class);
     private final StoreContext context;

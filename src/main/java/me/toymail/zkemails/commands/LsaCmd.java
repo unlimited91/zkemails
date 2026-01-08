@@ -13,6 +13,6 @@ public final class LsaCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(LsaCmd.class);
 
     @Override public void run() {
-        log.info("Use: zkemails lsa invi --help");
+        log.info("Use: zke lsia --help");
     }
 }

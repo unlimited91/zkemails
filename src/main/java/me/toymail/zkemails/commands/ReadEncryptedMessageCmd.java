@@ -21,12 +21,12 @@ import java.util.*;
         footer = {
             "",
             "Examples:",
-            "  zkemails rem                  List recent encrypted messages",
-            "  zkemails rem --message 42     View and decrypt message with ID 42",
-            "  zkemails rem --thread 42      View entire conversation containing message 42",
-            "  zkemails rem --reply 42       Reply to message 42 (opens editor)",
+            "  zke rem                  List recent encrypted messages",
+            "  zke rem --message 42     View and decrypt message with ID 42",
+            "  zke rem --thread 42      View entire conversation containing message 42",
+            "  zke rem --reply 42       Reply to message 42 (opens editor)",
             "",
-            "Sample thread output (zkemails rem --thread 42):",
+            "Sample thread output (zke rem --thread 42):",
             "  === Thread: Hello (3 messages) ===",
             "",
             "  [ID=38] From: alice@example.com | Date: 2025-01-06 10:30",
@@ -88,7 +88,7 @@ public class ReadEncryptedMessageCmd implements Runnable {
             return;
         }
         if (cfg == null) {
-            log.error("Not initialized. Run: zkemails init ...");
+            log.error("Not initialized. Run: zke init --email <your-email>");
             return;
         }
         if (myKeys == null) {
@@ -220,7 +220,7 @@ public class ReadEncryptedMessageCmd implements Runnable {
         ContactsStore.Contact contact = context.contacts().get(replyToEmail);
         if (contact == null || contact.x25519PublicB64 == null || contact.fingerprintHex == null) {
             log.error("No pinned X25519 key for contact: {}", replyToEmail);
-            log.error("Run: zkemails sync-ack (or invi if they invited you).");
+            log.error("Run: zke sync-ack (or ack invi if they invited you).");
             return;
         }
 

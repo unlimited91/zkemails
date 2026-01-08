@@ -65,78 +65,60 @@ public final class SmtpClient implements AutoCloseable {
                              IdentityKeys.KeyBundle senderKeys,
                              InviteStore inviteStore) throws MessagingException {
         String inviteId = UUID.randomUUID().toString();
-        String subject = "🔒 Welcome to Private chat through zkemails";
+        String subject = "🔒 Welcome to Private chat through zke (Zero Knowledge Emails)";
         String body = String.format("""
-                Hey! I'd like to chat with you privately using zkemails.
+                Hey! I'd like to chat with you privately using zke.
 
                 Invitation ID: %s
 
-                What is zkemails?
-                -----------------
-                The name zkemails expands to "Zero Knowledge Emails". zkemails is an end-to-end encrypted multi profile email client that works on top of
-                your regular email. Read more about it's origin: https://musings.sayanr.com/2025/12/26/zkmails.html
-                
-                It is an open source client tool that is designed to be completely controlled by the person running it.
-                It does NOT and will NOT talk to a remote server. It is designed for privacy first residents
-                who live inside their terminal.
-                
-                The password you use to init is NOT the same as your email password that you use to login to your gmail.
-                You have to create something called an app password and use the same. Unfortunately this is a restriction from gmail.
-                Frankly I like it. It allows one to create a purpose based app password for this client.
-                
-                To create an app password, visit https://myaccount.google.com/apppasswords. If your gmail does not allow you
-                to access this page this means that your gmail account does NOT have 2FA setup.
-                
-                Setting up 2FA
-                --------------------------------
-                1. Visit https://myaccount.google.com/
-                2. Click on the Security and sign-in option on the left hand panel
-                3. Enable 2FA for the account
-                4. You should be able to access https://myaccount.google.com/apppasswords
-                5. Create an app password for zkemails. Now the app password you create will look something like this
-                   "xxxx yyyy zzzz". Remove the whitespaces in between to make a single string like "xxxxyyyyzzzz". This
-                   whitespace removed string is your zkemails password for the corresponding email-id.
+                What is zke?
+                ------------
+                zke (Zero Knowledge Emails) is an end-to-end encrypted email client that works on top of
+                your regular email. Read more: https://musings.sayanr.com/2025/12/26/zkmails.html
+
+                It is an open source CLI tool designed for privacy-first users who live in the terminal.
+                It does NOT talk to any remote server - all encryption happens locally.
+
+                Note: The password for zke is NOT your Gmail password. You need to create an "App Password".
+
+                Creating an App Password (Gmail):
+                ----------------------------------
+                1. Visit https://myaccount.google.com/apppasswords
+                   (If blocked, enable 2FA first at https://myaccount.google.com/ -> Security)
+                2. Create an app password for zke
+                3. The password looks like "xxxx yyyy zzzz" - remove spaces to get "xxxxyyyyzzzz"
 
                 Getting Started:
                 ----------------
-                1. Install zkemails:
+                1. Install zke:
                    curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/0.0.1.beta1/install.sh | bash
 
                 2. Initialize with your email:
-                   zkemails init --email %s
-                   Password for %s
-                   You can also add your password safely to your system keychain to avoid entering it every time for every command.
-                   Please read and understand about system keychains and look at the zkemails implementation.
-                   You should NEVER assume security.
+                   zke init --email %s
 
-                3. Accept this invitation using the invitation id mentioned above:
-                   zkemails ack invi --invite-id %s --password
-                
-                4. You can see the profiles added and switch the relevant profile. A profile is an email you have
-                    initialized zkemails with via zkemails init.
-                   zkemails prof ls (List profiles)
-                   zkemails prof set <profile-name> (Set profile)
+                3. Accept this invitation:
+                   zke ack invi --invite-id %s
 
-                Using zkemails:
-                ---------------
-                View your inbox:
-                   zkemails inbox
-
+                Using zke:
+                ----------
                 Send an encrypted message:
-                   zkemails send-message (This will open an editor for you to compose the message)
-                   zkemails send-message --to %s --subject "Hello" (This will just pre populate the to and subject fields in the editor)
+                   zke sem                              (Opens editor)
+                   zke sem --to %s      (Pre-fills recipient)
 
-                List encrypted messages:
-                   zkemails rem
+                Read encrypted messages:
+                   zke rem                   (List messages)
+                   zke rem --message 42      (Read message)
+                   zke rem --thread 42       (View conversation)
+                   zke rem --reply 42        (Reply to message)
 
-                Read/decrypt a specific message:
-                   zkemails rem
-                   Please go through the help manual for this command. It is quite detailed with examples.
+                Manage profiles:
+                   zke lsp                   (List profiles)
+                   zke pset <email>          (Switch profile)
 
                 That's it! Once you accept, we can exchange end-to-end encrypted messages.
 
-                For more learning use zkemails --help
-                """, inviteId, toEmail, toEmail, inviteId, fromEmail);
+                For help: zke --help
+                """, inviteId, toEmail, inviteId, fromEmail);
 
         MimeMessage msg = new MimeMessage(session);
         msg.setFrom(new InternetAddress(fromEmail));
@@ -166,7 +148,7 @@ public final class SmtpClient implements AutoCloseable {
     public void sendAcceptWithKeys(String fromEmail, String toEmail, String inviteId,
                                    String fpHex, String edPubB64, String xPubB64) throws MessagingException {
 
-        String subject = "Re: 🔒 Private chat? (zkemails)";
+        String subject = "Re: 🔒 Private chat? (zke)";
         String body = "yes satoshi";
 
         MimeMessage msg = new MimeMessage(session);
@@ -206,7 +188,7 @@ public final class SmtpClient implements AutoCloseable {
         msg.setRecipients(Message.RecipientType.TO, InternetAddress.parse(toEmail, false));
         msg.setSubject(subject, "UTF-8");
         msg.setSentDate(new Date());
-        msg.setText("Encrypted message (zkemails).", "UTF-8");
+        msg.setText("Encrypted message (zke).", "UTF-8");
 
         // Threading headers for replies
         if (inReplyTo != null && !inReplyTo.isBlank()) {

@@ -6,13 +6,20 @@ import picocli.CommandLine.Command;
 
 @Command(
         name = "ack",
-        description = "Acknowledge the invite via an invite-id.",
-        subcommands = { AckInviCmd.class }
+        description = "Acknowledge invitations",
+        subcommands = { AckInviCmd.class },
+        footer = {
+            "",
+            "Usage:",
+            "  zke ack invi --invite-id <id>   Accept an invitation",
+            "",
+            "See 'zke ack invi --help' for more details."
+        }
 )
 public final class AckCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(AckCmd.class);
 
     @Override public void run() {
-        log.info("Use: zkemails ack invi --help");
+        log.info("Use: zke ack invi --help");
     }
 }

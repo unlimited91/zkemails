@@ -6,17 +6,40 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 
 @Command(
-        name = "zkemails",
+        name = "zke",
         mixinStandardHelpOptions = true,
-        description = "Zero Knowledge email client",
+        description = "Zero Knowledge Email client - End-to-end encrypted email on top of regular email",
+        footer = {
+                "",
+                "Quick Start:",
+                "  zke init --email you@gmail.com   Initialize with your email",
+                "  zke invite --to friend@email.com Send an invite to start encrypted chat",
+                "  zke sem                          Send an encrypted message (opens editor)",
+                "  zke rem                          Read encrypted messages",
+                "",
+                "Common Commands:",
+                "  init      Initialize zke with your email",
+                "  invite    Send an invite to a new contact",
+                "  sem       Send an encrypted message",
+                "  rem       Read encrypted messages (list, view, thread, reply)",
+                "  inbox     View your inbox",
+                "  lsi       List pending incoming invites",
+                "  lsia      List acknowledged invites",
+                "  ack       Acknowledge invites",
+                "  lsp       List profiles",
+                "  pset      Set active profile",
+                "",
+                "Use 'zke <command> --help' for more information on a command."
+        },
         subcommands = {
                 InitCmd.class,
                 InboxCmd.class,
                 SendInviteCmd.class,
-                LsCmd.class,
+                LsInviCmd.class,
                 AckCmd.class,
-                LsaCmd.class,
-                ProfileCmd.class,
+                LsaInviCmd.class,
+                LspCmd.class,
+                PsetCmd.class,
                 SendMessageCmd.class,
                 ReadEncryptedMessageCmd.class,
                 SyncAckCmd.class,
@@ -32,6 +55,6 @@ public final class RootCmd implements Runnable {
     }
 
     @Override public void run() {
-        log.info("Use --help. Example: zkemails init --help");
+        log.info("Use --help. Example: zke init --help");
     }
 }

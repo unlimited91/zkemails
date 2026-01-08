@@ -11,7 +11,16 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-@Command(name = "send-message", description = "Send a pure E2E encrypted email using pinned contact keys.")
+@Command(name = "sem", description = "Send an encrypted message to a contact",
+        footer = {
+                "",
+                "Examples:",
+                "  zke sem                                    Open editor to compose message",
+                "  zke sem --to alice@example.com             Pre-fill recipient",
+                "  zke sem --to alice@example.com --subject 'Hello'  Pre-fill recipient and subject",
+                "",
+                "Note: Recipient must be a contact with exchanged keys (via invite/ack flow)."
+        })
 public final class SendMessageCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(SendMessageCmd.class);
     private final StoreContext context;
@@ -41,7 +50,7 @@ public final class SendMessageCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                log.error("Not initialized. Run: zkemails init ...");
+                log.error("Not initialized. Run: zke init --email <your-email>");
                 return;
             }
 
@@ -97,7 +106,7 @@ public final class SendMessageCmd implements Runnable {
             ContactsStore.Contact c = context.contacts().get(recipientTo);
             if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
                 log.error("No pinned X25519 key for contact: {}", recipientTo);
-                log.error("Run: zkemails sync-ack (or invi if they invited you).");
+                log.error("Run: zke sync-ack (or ack invi if they invited you).");
                 return;
             }
 

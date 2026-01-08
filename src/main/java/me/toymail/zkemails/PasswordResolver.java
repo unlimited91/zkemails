@@ -46,7 +46,7 @@ public final class PasswordResolver {
         if (console == null) {
             throw new IllegalStateException(
                 "No password available for " + email + " and no console for interactive input. " +
-                "Use --password flag or save password to keychain with 'zkemails init'."
+                "Use --password flag or save password to keychain with 'zke init'."
             );
         }
 
