@@ -11,7 +11,27 @@ import picocli.CommandLine.Option;
 import java.util.List;
 import java.util.Map;
 
-@Command(name = "sync-ack", description = "Sync ACCEPT messages and store sender public keys for future encrypted communication.")
+@Command(name = "sync-ack", description = "Sync ACCEPT messages and import public keys from contacts",
+        footer = {
+            "",
+            "Examples:",
+            "  zke sync-ack               Sync all accept messages (up to 200)",
+            "  zke sync-ack --limit 500   Sync more messages",
+            "",
+            "What this command does:",
+            "  Scans your inbox for ACCEPT messages (responses to your invites)",
+            "  and imports the sender's public keys into your contacts.",
+            "",
+            "When to use:",
+            "  After sending invites with 'zke invite', run this command to",
+            "  import keys from people who accepted your invitation.",
+            "",
+            "Workflow:",
+            "  1. zke invite --to friend@example.com   Send invite",
+            "  2. (friend accepts the invite)",
+            "  3. zke sync-ack                         Import their keys",
+            "  4. zke sem --to friend@example.com      Send encrypted message"
+        })
 public final class SyncAckCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(SyncAckCmd.class);
     private final StoreContext context;
@@ -20,10 +40,12 @@ public final class SyncAckCmd implements Runnable {
         this.context = context;
     }
 
-    @Option(names="--password", description = "App password (optional if saved to keychain)")
+    @Option(names="--password", paramLabel = "<password>",
+            description = "App password (optional if saved to keychain)")
     String password;
 
-    @Option(names="--limit", defaultValue = "200")
+    @Option(names="--limit", defaultValue = "200", paramLabel = "<n>",
+            description = "Maximum messages to scan (default: ${DEFAULT-VALUE})")
     int limit;
 
     @Override
@@ -35,7 +57,7 @@ public final class SyncAckCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                log.error("Not initialized. Run: zkemails init ...");
+                log.error("Not initialized. Run: zke init --email <your-email>");
                 return;
             }
 

@@ -13,7 +13,25 @@ import picocli.CommandLine.Option;
 import java.util.List;
 import java.util.Map;
 
-@Command(name = "invi", description = "Acknowledge an invite by invite-id")
+@Command(name = "invi", description = "Accept an invitation to start encrypted communication",
+        footer = {
+            "",
+            "Examples:",
+            "  zke ack invi --invite-id abc123-def456",
+            "",
+            "What this command does:",
+            "  1. Finds the invite email in your inbox by ID",
+            "  2. Extracts the sender's public keys from the invite",
+            "  3. Stores their keys locally (TOFU - Trust On First Use)",
+            "  4. Sends an ACCEPT message with your public keys",
+            "",
+            "After acknowledging, you can exchange encrypted messages:",
+            "  zke sem                    Send encrypted message",
+            "  zke rem                    Read encrypted messages",
+            "",
+            "To find invite IDs, use:",
+            "  zke lsi                    List pending invites"
+        })
 public final class AckInviCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(AckInviCmd.class);
     private final StoreContext context;
@@ -22,10 +40,12 @@ public final class AckInviCmd implements Runnable {
         this.context = context;
     }
 
-    @Option(names="--invite-id", required = true, description = "Invite ID to acknowledge")
+    @Option(names="--invite-id", required = true, paramLabel = "<id>",
+            description = "The invite ID from the invitation email")
     String inviteId;
 
-    @Option(names="--password", description = "App password (optional if saved to keychain)")
+    @Option(names="--password", paramLabel = "<password>",
+            description = "App password (optional if saved to keychain)")
     String password;
 
     @Override
@@ -37,7 +57,7 @@ public final class AckInviCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                log.error("Not initialized. Run: zkemails init ...");
+                log.error("Not initialized. Run: zke init --email <your-email>");
                 return;
             }
 

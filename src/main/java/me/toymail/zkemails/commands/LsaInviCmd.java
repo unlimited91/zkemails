@@ -12,7 +12,16 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-@Command(name = "invi", description = "List acknowledged invites. This is fetched from local store")
+@Command(name = "lsia", description = "List acknowledged invites",
+        footer = {
+                "",
+                "Examples:",
+                "  zke lsia              List all acknowledged invites",
+                "  zke lsia --limit 10   Show only 10 invites",
+                "",
+                "These are invites you have already acknowledged.",
+                "You can now exchange encrypted messages with these contacts."
+        })
 public final class LsaInviCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(LsaInviCmd.class);
     private final StoreContext context;

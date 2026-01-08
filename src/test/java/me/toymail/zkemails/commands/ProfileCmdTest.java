@@ -13,20 +13,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class ProfileCmdTest extends CommandTestBase {
 
     @Test
-    public void testProfileLs_NoProfiles() {
-        ProfileCmd cmd = new ProfileCmd(context);
+    public void testLsp_NoProfiles() {
+        LspCmd cmd = new LspCmd(context);
 
         // Capture stdout
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
         System.setOut(new PrintStream(outContent));
 
-        executeCommand(cmd, "ls");
+        executeCommand(cmd);
 
         assertTrue(outContent.toString().contains("No profiles found"));
     }
 
     @Test
-    public void testProfileLs_WithProfiles() throws Exception {
+    public void testLsp_WithProfiles() throws Exception {
         // Setup profile config
         ZkStore store = new ZkStore("test@example.com");
         store.ensure();
@@ -36,18 +36,18 @@ public class ProfileCmdTest extends CommandTestBase {
         );
         reinitializeContext();
 
-        ProfileCmd cmd = new ProfileCmd(context);
+        LspCmd cmd = new LspCmd(context);
 
         ByteArrayOutputStream outContent = new ByteArrayOutputStream();
         System.setOut(new PrintStream(outContent));
 
-        executeCommand(cmd, "ls");
+        executeCommand(cmd);
 
         assertTrue(outContent.toString().contains("* test@example.com"));
     }
 
     @Test
-    public void testProfileUse_Success() throws Exception {
+    public void testPset_Success() throws Exception {
         // Setup profile config
         ZkStore store = new ZkStore("test@example.com");
         store.ensure();
@@ -59,9 +59,9 @@ public class ProfileCmdTest extends CommandTestBase {
         );
         reinitializeContext();
 
-        ProfileCmd cmd = new ProfileCmd(context);
+        PsetCmd cmd = new PsetCmd(context);
 
-        executeCommand(cmd, "set", "other@example.com");
+        executeCommand(cmd, "other@example.com");
 
         // Verify current profile changed
         String content = java.nio.file.Files.readString(tempDir.resolve(".zkemails").resolve("profile.config"));
@@ -71,4 +71,3 @@ public class ProfileCmdTest extends CommandTestBase {
         assertTrue("other@example.com".equals(map.get("default")));
     }
 }
-

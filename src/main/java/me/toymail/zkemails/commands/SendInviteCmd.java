@@ -9,7 +9,18 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-@Command(name = "send-invite", description = "Send a zkemails invite to a recipient.")
+@Command(name = "invite", description = "Send an invite to start encrypted communication with someone",
+        footer = {
+                "",
+                "Examples:",
+                "  zke invite --to alice@example.com   Send invite to Alice",
+                "",
+                "After sending, the recipient needs to:",
+                "  1. Install zke and initialize with their email",
+                "  2. Run: zke ack invi --invite-id <id-from-email>",
+                "",
+                "Once they acknowledge, you can exchange encrypted messages."
+        })
 public final class SendInviteCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(SendInviteCmd.class);
     private final StoreContext context;
@@ -33,7 +44,7 @@ public final class SendInviteCmd implements Runnable {
             }
             Config cfg = context.zkStore().readJson("config.json", Config.class);
             if (cfg == null) {
-                log.error("Not initialized. Run: zkemails init ...");
+                log.error("Not initialized. Run: zke init --email <your-email>");
                 return;
             }
 

@@ -56,16 +56,12 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
             msgs.add(new ImapClient.MailSummary(1, 100, false, new Date(), "sender@example.com", "Subject"));
             when(imap.searchHeaderEquals(eq("X-ZKEmails-Type"), eq("msg"), anyInt())).thenReturn(msgs);
 
-            Map<String, List<String>> headers = new HashMap<>();
-            headers.put("X-ZKEmails-Sig", List.of("sig123"));
-            when(imap.fetchAllHeadersByUid(100)).thenReturn(headers);
-
             ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd(context);
             cmd.password = "pass";
             cmd.run();
 
+            // List mode now just shows UID, from, subject, date - no fetchAllHeadersByUid call
             verify(imap).searchHeaderEquals(eq("X-ZKEmails-Type"), eq("msg"), anyInt());
-            verify(imap).fetchAllHeadersByUid(100);
         }
     }
 
@@ -86,9 +82,9 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
             ImapClient imap = mock(ImapClient.class);
             mockedImap.when(() -> ImapClient.connect(any())).thenReturn(imap);
 
-            List<ImapClient.MailSummary> msgs = new ArrayList<>();
-            msgs.add(new ImapClient.MailSummary(1, 100, false, new Date(), "sender@example.com", "Subject"));
-            when(imap.searchHeaderEquals(eq("X-ZKEmails-Type"), eq("msg"), anyInt())).thenReturn(msgs);
+            // Mock getMessageByUid for the new UID-based lookup
+            ImapClient.MailSummary msg = new ImapClient.MailSummary(1, 100, false, new Date(), "sender@example.com", "Subject");
+            when(imap.getMessageByUid(100L)).thenReturn(msg);
 
             // Create valid encrypted payload
             CryptoBox.EncryptedPayload payload = CryptoBox.encryptToRecipient(
@@ -107,15 +103,15 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
             headers.put("X-ZKEmails-Recipient-Fp", List.of(payload.recipientFpHex()));
             headers.put("X-ZKEmails-PubKey-Ed25519", List.of(senderKeys.ed25519PublicB64()));
 
-            when(imap.fetchAllHeadersByUid(100)).thenReturn(headers);
+            when(imap.fetchAllHeadersByUid(100L)).thenReturn(headers);
 
             ReadEncryptedMessageCmd cmd = new ReadEncryptedMessageCmd(context);
             cmd.password = "pass";
-            cmd.messageId = payload.sigB64();
+            cmd.messageId = 100L;  // Now uses UID instead of signature
             cmd.run();
 
-            verify(imap).searchHeaderEquals(eq("X-ZKEmails-Type"), eq("msg"), anyInt());
-            verify(imap).fetchAllHeadersByUid(100);
+            verify(imap).getMessageByUid(100L);
+            verify(imap).fetchAllHeadersByUid(100L);
         }
     }
 
@@ -140,4 +136,3 @@ public class ReadEncryptedMessageCmdTest extends CommandTestBase {
         store.writeJson("keys.json", keys);
     }
 }
-

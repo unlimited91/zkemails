@@ -182,4 +182,126 @@ public final class ImapClient implements AutoCloseable {
         }
         return out;
     }
+
+    /**
+     * Get a message summary by UID directly.
+     */
+    public MailSummary getMessageByUid(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return null;
+        return toSummary(m);
+    }
+
+    /**
+     * Get the Message-ID header for a message.
+     */
+    public String getMessageId(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return null;
+        String[] ids = m.getHeader("Message-ID");
+        return (ids != null && ids.length > 0) ? ids[0] : null;
+    }
+
+    /**
+     * Get In-Reply-To header for a message.
+     */
+    public String getInReplyTo(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return null;
+        String[] refs = m.getHeader("In-Reply-To");
+        return (refs != null && refs.length > 0) ? refs[0] : null;
+    }
+
+    /**
+     * Get References header for a message.
+     */
+    public String getReferences(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return null;
+        String[] refs = m.getHeader("References");
+        return (refs != null && refs.length > 0) ? refs[0] : null;
+    }
+
+    /**
+     * Search for all messages in a thread by Message-ID.
+     * Finds messages where Message-ID, In-Reply-To, or References match.
+     */
+    public List<MailSummary> searchThread(Set<String> threadMessageIds, int limit) throws MessagingException {
+        if (threadMessageIds == null || threadMessageIds.isEmpty()) return List.of();
+
+        // Search for zkemails messages in recent days
+        Date sinceDate = daysAgo(SEARCH_DAYS_LIMIT);
+        SearchTerm baseTerm = new AndTerm(
+                new ReceivedDateTerm(ComparisonTerm.GE, sinceDate),
+                new HeaderTerm("X-ZKEmails-Type", "msg")
+        );
+        Message[] found = inbox.search(baseTerm);
+        if (found == null || found.length == 0) return List.of();
+
+        // Filter by thread membership
+        List<Message> threadMsgs = new ArrayList<>();
+        for (Message m : found) {
+            String msgId = getHeaderValue(m, "Message-ID");
+            String inReplyTo = getHeaderValue(m, "In-Reply-To");
+            String references = getHeaderValue(m, "References");
+
+            boolean inThread = false;
+            if (msgId != null && threadMessageIds.contains(msgId)) inThread = true;
+            if (inReplyTo != null && threadMessageIds.contains(inReplyTo)) inThread = true;
+            if (references != null) {
+                for (String id : threadMessageIds) {
+                    if (references.contains(id)) {
+                        inThread = true;
+                        break;
+                    }
+                }
+            }
+            if (inThread) threadMsgs.add(m);
+        }
+
+        // Sort by date ascending (oldest first for thread view)
+        threadMsgs.sort(Comparator.comparing(m -> {
+            try {
+                return m.getReceivedDate();
+            } catch (MessagingException e) {
+                return new Date(0);
+            }
+        }));
+
+        int n = Math.min(limit, threadMsgs.size());
+        List<MailSummary> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            out.add(toSummary(threadMsgs.get(i)));
+        }
+        return out;
+    }
+
+    private String getHeaderValue(Message m, String headerName) throws MessagingException {
+        String[] vals = m.getHeader(headerName);
+        return (vals != null && vals.length > 0) ? vals[0] : null;
+    }
+
+    /**
+     * Build the full set of Message-IDs in a thread starting from a message.
+     */
+    public Set<String> buildThreadIdSet(long uid) throws MessagingException {
+        Set<String> ids = new HashSet<>();
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return ids;
+
+        String msgId = getHeaderValue(m, "Message-ID");
+        if (msgId != null) ids.add(msgId);
+
+        String inReplyTo = getHeaderValue(m, "In-Reply-To");
+        if (inReplyTo != null) ids.add(inReplyTo);
+
+        String references = getHeaderValue(m, "References");
+        if (references != null) {
+            // References is space-separated list of Message-IDs
+            for (String ref : references.split("\\s+")) {
+                if (!ref.isBlank()) ids.add(ref.trim());
+            }
+        }
+        return ids;
+    }
 }
