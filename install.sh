@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# zkemails installer
+# zke (Zero Knowledge Emails) installer
 #
 # DESCRIPTION:
-#   Installs the zkemails CLI tool by downloading the JAR from GitHub releases
+#   Installs the zke CLI tool by downloading the JAR from GitHub releases
 #   and setting up the necessary wrapper script and PATH configuration.
 #
 # USAGE:
@@ -24,7 +24,7 @@
 #
 # INSTALLATION DIRECTORY:
 #   ~/.zkemails/bin/zkemails.jar    - The JAR file
-#   ~/.zkemails/bin/zkemails        - Wrapper script
+#   ~/.zkemails/bin/zke             - Wrapper script
 #
 # EXIT CODES:
 #   0 - Success
@@ -244,7 +244,7 @@ install_java_via_sdkman() {
     show_java_install_prompt "$current_version"
 
     if ! prompt_yes_no "Install Java $MIN_JAVA_VERSION via SDKMAN?"; then
-        error "Java $MIN_JAVA_VERSION+ is required to run zkemails. Please install Java manually and run this script again."
+        error "Java $MIN_JAVA_VERSION+ is required to run zke. Please install Java manually and run this script again."
     fi
 
     # Install SDKMAN if not already installed
@@ -359,7 +359,7 @@ download_jar() {
 create_wrapper() {
     info "Creating wrapper script..."
 
-    local wrapper="$BIN_DIR/zkemails"
+    local wrapper="$BIN_DIR/zke"
 
     cat > "$wrapper" << 'EOF'
 #!/bin/bash
@@ -392,7 +392,7 @@ add_to_path_file() {
 
     {
         echo ""
-        echo "# zkemails"
+        echo "# zke (Zero Knowledge Emails)"
         echo "$path_entry"
     } >> "$file"
 
@@ -450,14 +450,20 @@ print_success() {
 
 ${GREEN}Installation complete!${NC}
 
-zkemails v$ZKEMAILS_VERSION has been installed to $BIN_DIR
+zke v$ZKEMAILS_VERSION has been installed to $BIN_DIR
 
 To get started, restart your terminal or run:
   source ~/$shell_rc
 
 Then try:
-  zkemails --help
-  zkemails init --email your@email.com --password
+  zke --help
+  zke init --email your@email.com
+
+Quick start:
+  zke init --email you@gmail.com     # Initialize with your email
+  zke invite --to friend@email.com   # Send an invite
+  zke sem                            # Send encrypted message
+  zke rem                            # Read encrypted messages
 
 EOF
 }
@@ -467,7 +473,8 @@ print_banner() {
     cat << 'EOF'
 
 =====================================
-       zkemails installer
+    zke (Zero Knowledge Emails)
+           installer
 =====================================
 
 EOF
