@@ -1,6 +1,6 @@
 # zke (Zero Knowledge Emails)
 
-End-to-end encrypted email client using key gossip + TOFU (Trust On First Use).
+End-to-end encrypted multi profile email client using key gossip + TOFU (Trust On First Use).
 
 ## Installation
 
