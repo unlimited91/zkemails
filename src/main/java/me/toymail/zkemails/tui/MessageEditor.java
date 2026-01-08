@@ -16,6 +16,7 @@ import java.util.List;
 public final class MessageEditor {
     private static final Logger log = LoggerFactory.getLogger(MessageEditor.class);
     private static final String SEPARATOR = "--- Write your message below this line ---";
+    private static final String CANCEL_MARKER = "# DELETE THIS LINE TO SEND (save unchanged to cancel)";
 
     /**
      * Result of the editor session.
@@ -116,6 +117,7 @@ public final class MessageEditor {
         StringBuilder sb = new StringBuilder();
         sb.append("To: ").append(to != null ? to : "").append("\n");
         sb.append("Subject: ").append(subject != null ? subject : "").append("\n");
+        sb.append(CANCEL_MARKER).append("\n");
         sb.append(SEPARATOR).append("\n");
         if (body != null && !body.isBlank()) {
             sb.append(body);
@@ -167,6 +169,7 @@ public final class MessageEditor {
         String subject = null;
         List<String> bodyLines = new ArrayList<>();
         boolean inBody = false;
+        boolean cancelMarkerPresent = false;
 
         for (String line : lines) {
             if (inBody) {
@@ -174,11 +177,19 @@ public final class MessageEditor {
             } else if (line.startsWith(SEPARATOR.substring(0, 3))) {
                 // Found separator, everything after is body
                 inBody = true;
+            } else if (line.startsWith("# DELETE THIS LINE TO SEND")) {
+                // Cancel marker still present - user didn't confirm
+                cancelMarkerPresent = true;
             } else if (line.toLowerCase().startsWith("to:")) {
                 to = line.substring(3).trim();
             } else if (line.toLowerCase().startsWith("subject:")) {
                 subject = line.substring(8).trim();
             }
+        }
+
+        // If cancel marker is still present, user didn't confirm sending
+        if (cancelMarkerPresent) {
+            return EditorResult.cancelled();
         }
 
         String body = String.join("\n", bodyLines).trim();

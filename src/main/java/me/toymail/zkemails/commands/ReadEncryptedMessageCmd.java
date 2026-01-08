@@ -7,6 +7,7 @@ import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.ContactsStore;
 import me.toymail.zkemails.store.StoreContext;
+import me.toymail.zkemails.tui.ConsoleMenu;
 import me.toymail.zkemails.tui.MessageEditor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,36 +18,25 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-@Command(name = "rem", description = "Read encrypted messages (list, view, thread, or reply)",
+@Command(name = "rem", description = "Read encrypted messages (interactive browser or CLI mode)",
         footer = {
             "",
-            "Examples:",
-            "  zke rem                  List recent encrypted messages",
+            "Interactive Mode (default):",
+            "  zke rem                  Opens interactive email browser",
+            "                           [UP/DOWN] Navigate  [ENTER] View thread  [q] Quit",
+            "                           [r] Reply  [q] Back to list (in thread view)",
+            "",
+            "CLI Mode:",
+            "  zke rem --no-interactive List messages in plain text",
             "  zke rem --message 42     View and decrypt message with ID 42",
             "  zke rem --thread 42      View entire conversation containing message 42",
             "  zke rem --reply 42       Reply to message 42 (opens editor)",
             "",
-            "Sample thread output (zke rem --thread 42):",
-            "  === Thread: Hello (3 messages) ===",
-            "",
-            "  [ID=38] From: alice@example.com | Date: 2025-01-06 10:30",
-            "  Subject: Hello",
-            "",
-            "  Hi! How are you?",
-            "",
-            "  ---",
-            "",
-            "  [ID=42] From: bob@example.com | Date: 2025-01-07 14:15",
-            "  Subject: Re: Hello",
-            "",
-            "  I'm good, thanks!",
-            "",
-            "  ---",
-            "",
-            "  [ID=45] From: alice@example.com | Date: 2025-01-08 09:00",
-            "  Subject: Re: Hello",
-            "",
-            "  Great to hear!"
+            "Sample interactive list:",
+            "  === Encrypted Messages (3) ===",
+            "  > 142   Jan 08 14:30 | alice@example.com | Project update",
+            "    138   Jan 07 10:15 | bob@example.com   | Re: Hello",
+            "    135   Jan 06 09:00 | alice@example.com | Hello"
         })
 public class ReadEncryptedMessageCmd implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(ReadEncryptedMessageCmd.class);
@@ -71,6 +61,9 @@ public class ReadEncryptedMessageCmd implements Runnable {
 
     @Option(names = "--limit", defaultValue = "20", description = "Maximum number of messages to display (default: ${DEFAULT-VALUE})")
     int limit;
+
+    @Option(names = "--no-interactive", description = "Disable interactive mode, use plain list output")
+    boolean noInteractive;
 
     @Override
     public void run() {
@@ -110,12 +103,41 @@ public class ReadEncryptedMessageCmd implements Runnable {
                 // Single message view mode
                 handleSingleMessage(imap, cfg, myKeys);
             } else {
-                // List mode
-                handleList(imap);
+                // No options - check if interactive mode is available
+                if (!noInteractive && ConsoleMenu.isInteractiveSupported()) {
+                    handleInteractive(imap, cfg, myKeys, resolvedPassword);
+                } else {
+                    // Fallback to list mode
+                    handleList(imap);
+                }
             }
 
         } catch (Exception e) {
             log.error("Error: {}", e.getMessage());
+        }
+    }
+
+    private void handleInteractive(ImapClient imap, Config cfg, IdentityKeys.KeyBundle myKeys, String resolvedPassword) throws Exception {
+        ConsoleMenu menu = new ConsoleMenu(context, cfg, myKeys, resolvedPassword);
+        ConsoleMenu.MenuResult result = menu.run(imap, limit);
+
+        switch (result.action()) {
+            case REPLY:
+                // User selected a message to reply to
+                replyTo = result.selectedMessageId();
+                // Need to reconnect since the menu may have used the connection
+                try (ImapClient newImap = ImapClient.connect(new ImapClient.ImapConfig(
+                        cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, resolvedPassword))) {
+                    handleReply(newImap, cfg, myKeys, resolvedPassword);
+                }
+                break;
+            case QUIT:
+                // Normal exit
+                break;
+            case CANCELLED:
+                // Fallback to list mode
+                handleList(imap);
+                break;
         }
     }
 
