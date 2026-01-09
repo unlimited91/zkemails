@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane fx:id="rootPane" xmlns:fx="http://javafx.com/fxml"
+            fx:controller="me.toymail.zkemails.gui.controller.MainController"
+            styleClass="root-pane">
+
+    <!-- Top: Header -->
+    <top>
+        <HBox styleClass="header" alignment="CENTER_LEFT" spacing="15">
+            <padding><Insets top="10" right="15" bottom="10" left="15"/></padding>
+            <Label text="ZKE - Zero Knowledge Emails" styleClass="app-title"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Label text="Profile:"/>
+            <ComboBox fx:id="profileSelector" prefWidth="200"/>
+        </HBox>
+    </top>
+
+    <!-- Left: Sidebar -->
+    <left>
+        <VBox fx:id="sidebar" styleClass="sidebar" spacing="5" prefWidth="180">
+            <padding><Insets top="15" right="10" bottom="15" left="10"/></padding>
+
+            <Label text="MESSAGES" styleClass="sidebar-section"/>
+            <Button fx:id="messagesButton" text="Inbox" onAction="#switchToMessages"
+                    styleClass="nav-button" maxWidth="Infinity"/>
+            <Button fx:id="sentButton" text="Sent" onAction="#switchToSent"
+                    styleClass="nav-button" maxWidth="Infinity"/>
+            <Button fx:id="composeButton" text="Compose" onAction="#switchToCompose"
+                    styleClass="nav-button" maxWidth="Infinity"/>
+
+            <Region VBox.vgrow="NEVER" prefHeight="20"/>
+
+            <Label text="CONTACTS" styleClass="sidebar-section"/>
+            <Button fx:id="contactsButton" text="All Contacts" onAction="#switchToContacts"
+                    styleClass="nav-button" maxWidth="Infinity"/>
+            <Button fx:id="invitesButton" text="Invites" onAction="#switchToInvites"
+                    styleClass="nav-button" maxWidth="Infinity"/>
+
+            <Region VBox.vgrow="ALWAYS"/>
+
+            <Label text="SETTINGS" styleClass="sidebar-section"/>
+            <Button fx:id="settingsButton" text="Settings" onAction="#switchToSettings"
+                    styleClass="nav-button" maxWidth="Infinity"/>
+        </VBox>
+    </left>
+
+    <!-- Center: Content Area -->
+    <center>
+        <StackPane fx:id="contentArea" styleClass="content-area">
+            <padding><Insets top="15" right="15" bottom="15" left="15"/></padding>
+        </StackPane>
+    </center>
+
+    <!-- Bottom: Status Bar -->
+    <bottom>
+        <HBox styleClass="status-bar" alignment="CENTER_LEFT" spacing="10">
+            <padding><Insets top="5" right="10" bottom="5" left="10"/></padding>
+            <Label fx:id="statusLabel" text="Ready"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <ProgressIndicator fx:id="progressIndicator" visible="false" prefWidth="16" prefHeight="16"/>
+        </HBox>
+    </bottom>
+</BorderPane>

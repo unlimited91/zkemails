@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="me.toymail.zkemails.gui.controller.InvitesController"
+      spacing="15">
+    <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+
+    <HBox alignment="CENTER_LEFT" spacing="10">
+        <Label text="Invites" styleClass="section-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="Refresh" onAction="#refresh"/>
+        <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+    </HBox>
+
+    <!-- Pending Incoming Invites -->
+    <VBox spacing="10" VBox.vgrow="ALWAYS">
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="Pending Incoming Invites" style="-fx-font-weight: bold;"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Acknowledge Selected" onAction="#acknowledgeSelected" styleClass="button-success"/>
+        </HBox>
+
+        <TableView fx:id="pendingTable" prefHeight="200">
+            <columns>
+                <TableColumn fx:id="pendingIdColumn" text="Invite ID" prefWidth="150"/>
+                <TableColumn fx:id="pendingEmailColumn" text="From" prefWidth="200"/>
+                <TableColumn fx:id="pendingSubjectColumn" text="Subject" prefWidth="200"/>
+                <TableColumn fx:id="pendingDateColumn" text="Date" prefWidth="130"/>
+            </columns>
+            <placeholder>
+                <Label text="No pending invites"/>
+            </placeholder>
+        </TableView>
+
+        <Label text="Select an invite and click 'Acknowledge' to accept and exchange keys."
+               style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
+    </VBox>
+
+    <Separator/>
+
+    <!-- Outgoing Invites -->
+    <VBox spacing="10" VBox.vgrow="ALWAYS">
+        <Label text="Outgoing Invites (Sent by You)" style="-fx-font-weight: bold;"/>
+
+        <TableView fx:id="outgoingTable" prefHeight="200">
+            <columns>
+                <TableColumn fx:id="outgoingEmailColumn" text="To" prefWidth="200"/>
+                <TableColumn fx:id="outgoingSubjectColumn" text="Subject" prefWidth="200"/>
+                <TableColumn fx:id="outgoingDateColumn" text="Date" prefWidth="130"/>
+                <TableColumn fx:id="outgoingStatusColumn" text="Status" prefWidth="100"/>
+            </columns>
+            <placeholder>
+                <Label text="No outgoing invites"/>
+            </placeholder>
+        </TableView>
+
+        <Label text="Use 'Sync Accept Messages' in Contacts to import keys from accepted invites."
+               style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
+    </VBox>
+</VBox>

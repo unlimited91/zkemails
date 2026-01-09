@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="me.toymail.zkemails.gui.controller.ComposeController"
+      spacing="15">
+    <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+
+    <Label text="Compose Encrypted Message" styleClass="section-title"/>
+
+    <GridPane hgap="10" vgap="10">
+        <columnConstraints>
+            <ColumnConstraints minWidth="80" halignment="RIGHT"/>
+            <ColumnConstraints hgrow="ALWAYS"/>
+        </columnConstraints>
+
+        <Label text="To:" styleClass="form-label" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+        <ComboBox fx:id="recipientCombo" maxWidth="Infinity" editable="true"
+                  promptText="Select or type recipient email"
+                  GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+
+        <Label text="Subject:" styleClass="form-label" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+        <TextField fx:id="subjectField" promptText="Enter subject"
+                   GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+    </GridPane>
+
+    <Label text="Message:" styleClass="form-label"/>
+    <TextArea fx:id="bodyArea" VBox.vgrow="ALWAYS" promptText="Type your message here..."
+              wrapText="true"/>
+
+    <HBox spacing="10" alignment="CENTER_RIGHT">
+        <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="Clear" onAction="#clearForm"/>
+        <Button fx:id="sendButton" text="Send Encrypted" onAction="#send" styleClass="button-success"/>
+    </HBox>
+</VBox>

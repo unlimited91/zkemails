@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="me.toymail.zkemails.gui.controller.ContactsController"
+      spacing="15">
+    <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+
+    <Label text="Contacts" styleClass="section-title"/>
+
+    <!-- Send Invite Section -->
+    <VBox styleClass="card" spacing="10">
+        <Label text="Send Invite to New Contact" style="-fx-font-weight: bold;"/>
+        <HBox spacing="10" alignment="CENTER_LEFT">
+            <TextField fx:id="inviteEmailField" promptText="Enter email address" HBox.hgrow="ALWAYS"/>
+            <Button text="Send Invite" onAction="#sendInvite" styleClass="button-primary"/>
+        </HBox>
+        <Label text="After sending, the recipient needs to acknowledge the invite using 'zke ack invi'"
+               style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
+    </VBox>
+
+    <!-- Toolbar -->
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <Button text="Refresh" onAction="#refresh"/>
+        <Button text="Sync Accept Messages" onAction="#syncAcceptMessages" styleClass="button-success"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+    </HBox>
+
+    <!-- Contacts Table -->
+    <TableView fx:id="contactsTable" VBox.vgrow="ALWAYS">
+        <columns>
+            <TableColumn fx:id="emailColumn" text="Email" prefWidth="300"/>
+            <TableColumn fx:id="statusColumn" text="Status" prefWidth="100"/>
+            <TableColumn fx:id="lastSeenColumn" text="Last Updated" prefWidth="150"/>
+        </columns>
+        <placeholder>
+            <Label text="No contacts yet. Send an invite to start!"/>
+        </placeholder>
+    </TableView>
+
+    <Label text="Status 'ready' means you can exchange encrypted messages with this contact."
+           style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
+</VBox>

@@ -7,6 +7,7 @@ import jakarta.mail.search.FlagTerm;
 import jakarta.mail.search.HeaderTerm;
 import jakarta.mail.search.ReceivedDateTerm;
 import jakarta.mail.search.SearchTerm;
+import jakarta.mail.search.SubjectTerm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,9 +31,22 @@ public final class ImapClient implements AutoCloseable {
         this.uidFolder = (UIDFolder) inbox;
     }
 
-    private static final int SEARCH_DAYS_LIMIT = 10;
+    private static final int SEARCH_DAYS_LIMIT = 30;
+
+    // Common sent folder names for different email providers
+    private static final String[] SENT_FOLDER_NAMES = {
+        "[Gmail]/Sent Mail",  // Gmail
+        "Sent",               // Generic/Outlook
+        "Sent Items",         // Exchange/Outlook
+        "Sent Messages",      // Yahoo
+        "INBOX.Sent"          // Some IMAP servers
+    };
 
     public static ImapClient connect(ImapConfig cfg) throws MessagingException {
+        return connect(cfg, "INBOX");
+    }
+
+    public static ImapClient connect(ImapConfig cfg, String folderName) throws MessagingException {
         Properties props = new Properties();
         props.put("mail.store.protocol", cfg.ssl() ? "imaps" : "imap");
 
@@ -54,22 +68,72 @@ public final class ImapClient implements AutoCloseable {
         store.connect(cfg.host(), cfg.port(), cfg.username(), cfg.password());
         log.info("Store connected: {}", store.getClass().getSimpleName());
 
-        Folder inbox = store.getFolder("INBOX");
-        inbox.open(Folder.READ_ONLY);
-        log.info("Opened INBOX with messages");
-        if (!(inbox instanceof UIDFolder)) {
-            inbox.close(false);
+        Folder folder = store.getFolder(folderName);
+        folder.open(Folder.READ_ONLY);
+        log.info("Opened {} with messages", folderName);
+        if (!(folder instanceof UIDFolder)) {
+            folder.close(false);
             store.close();
             throw new MessagingException("Folder does not support UIDFolder; cannot use stable UIDs.");
         }
 
-        return new ImapClient(store, inbox);
+        return new ImapClient(store, folder);
+    }
+
+    /**
+     * Connect to the sent folder (tries common folder names).
+     */
+    public static ImapClient connectToSent(ImapConfig cfg) throws MessagingException {
+        Properties props = new Properties();
+        props.put("mail.store.protocol", cfg.ssl() ? "imaps" : "imap");
+        props.put("mail.imaps.ssl.enable", String.valueOf(cfg.ssl()));
+        props.put("mail.imaps.ssl.checkserveridentity", "true");
+        props.put("mail.imaps.connectiontimeout", "15000");
+        props.put("mail.imaps.timeout", "120000");
+        props.put("mail.imaps.writetimeout", "60000");
+        props.put("mail.imaps.usesocketchannels", "true");
+
+        Session session = Session.getInstance(props);
+        Store store = session.getStore(cfg.ssl() ? "imaps" : "imap");
+        store.connect(cfg.host(), cfg.port(), cfg.username(), cfg.password());
+        log.info("Store connected: {}", store.getClass().getSimpleName());
+
+        // Try each sent folder name
+        for (String sentFolderName : SENT_FOLDER_NAMES) {
+            try {
+                Folder folder = store.getFolder(sentFolderName);
+                if (folder.exists()) {
+                    folder.open(Folder.READ_ONLY);
+                    log.info("Opened sent folder: {}", sentFolderName);
+                    if (folder instanceof UIDFolder) {
+                        return new ImapClient(store, folder);
+                    }
+                    folder.close(false);
+                }
+            } catch (MessagingException e) {
+                log.debug("Sent folder '{}' not available: {}", sentFolderName, e.getMessage());
+            }
+        }
+
+        store.close();
+        throw new MessagingException("Could not find sent folder. Tried: " + String.join(", ", SENT_FOLDER_NAMES));
     }
 
     @Override
     public void close() throws MessagingException {
         if (inbox != null && inbox.isOpen()) inbox.close(false);
         if (store != null && store.isConnected()) store.close();
+    }
+
+    /**
+     * Check if the connection is still valid.
+     */
+    public boolean isConnected() {
+        try {
+            return store != null && store.isConnected() && inbox != null && inbox.isOpen();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public List<MailSummary> listInboxLatest(int limit) throws MessagingException {
@@ -223,6 +287,40 @@ public final class ImapClient implements AutoCloseable {
     }
 
     /**
+     * Get custom ZKEmails Thread ID header for a message.
+     * This header survives Gmail's header stripping (unlike In-Reply-To/References).
+     */
+    public String getZkeThreadId(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return null;
+        String[] threadId = m.getHeader("X-ZKEmails-Thread-Id");
+        return (threadId != null && threadId.length > 0) ? threadId[0] : null;
+    }
+
+    /**
+     * Get Gmail Thread ID (X-GM-THRID) for a message.
+     * Only works with Gmail IMAP server.
+     * @return the thread ID as a string, or null if not available
+     */
+    public String getGmailThreadId(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return null;
+        String[] thrid = m.getHeader("X-GM-THRID");
+        return (thrid != null && thrid.length > 0) ? thrid[0] : null;
+    }
+
+    /**
+     * Get Gmail Message ID (X-GM-MSGID) for a message.
+     * Only works with Gmail IMAP server.
+     */
+    public String getGmailMessageId(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return null;
+        String[] msgid = m.getHeader("X-GM-MSGID");
+        return (msgid != null && msgid.length > 0) ? msgid[0] : null;
+    }
+
+    /**
      * Search for all messages in a thread by Message-ID.
      * Finds messages where Message-ID, In-Reply-To, or References match.
      */
@@ -236,21 +334,30 @@ public final class ImapClient implements AutoCloseable {
                 new HeaderTerm("X-ZKEmails-Type", "msg")
         );
         Message[] found = inbox.search(baseTerm);
+        System.out.println("=== SEARCH DEBUG: Found " + (found != null ? found.length : 0) + " ZKE messages in last " + SEARCH_DAYS_LIMIT + " days");
         if (found == null || found.length == 0) return List.of();
 
         // Filter by thread membership
         List<Message> threadMsgs = new ArrayList<>();
+        System.out.println("=== SEARCH DEBUG: Looking for thread IDs: " + threadMessageIds);
         for (Message m : found) {
             String msgId = getHeaderValue(m, "Message-ID");
             String inReplyTo = getHeaderValue(m, "In-Reply-To");
             String references = getHeaderValue(m, "References");
+            String subject = "";
+            try { subject = m.getSubject(); } catch (Exception e) {}
+            System.out.println("=== SEARCH DEBUG: Checking msg [" + subject + "] In-Reply-To=" + inReplyTo + " References=" + references);
 
             boolean inThread = false;
             if (msgId != null && threadMessageIds.contains(msgId)) inThread = true;
-            if (inReplyTo != null && threadMessageIds.contains(inReplyTo)) inThread = true;
+            if (inReplyTo != null && threadMessageIds.contains(inReplyTo)) {
+                System.out.println("=== SEARCH DEBUG: Match via In-Reply-To: " + inReplyTo);
+                inThread = true;
+            }
             if (references != null) {
                 for (String id : threadMessageIds) {
                     if (references.contains(id)) {
+                        System.out.println("=== SEARCH DEBUG: Match via References: " + references);
                         inThread = true;
                         break;
                     }
@@ -258,6 +365,7 @@ public final class ImapClient implements AutoCloseable {
             }
             if (inThread) threadMsgs.add(m);
         }
+        System.out.println("=== SEARCH DEBUG: " + threadMsgs.size() + " messages match thread IDs");
 
         // Sort by date ascending (oldest first for thread view)
         threadMsgs.sort(Comparator.comparing(m -> {
@@ -272,6 +380,75 @@ public final class ImapClient implements AutoCloseable {
         List<MailSummary> out = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             out.add(toSummary(threadMsgs.get(i)));
+        }
+        return out;
+    }
+
+    /**
+     * Search for messages by subject (for Gmail sent folder where In-Reply-To/References aren't preserved).
+     * Matches messages where subject contains the base subject (with or without Re: prefix).
+     */
+    public List<MailSummary> searchBySubject(String baseSubject, int limit) throws MessagingException {
+        if (baseSubject == null || baseSubject.isEmpty()) return List.of();
+
+        Date sinceDate = daysAgo(SEARCH_DAYS_LIMIT);
+        // Search for ZKE messages with matching subject
+        SearchTerm baseTerm = new AndTerm(new SearchTerm[]{
+                new ReceivedDateTerm(ComparisonTerm.GE, sinceDate),
+                new HeaderTerm("X-ZKEmails-Type", "msg"),
+                new SubjectTerm(baseSubject)
+        });
+
+        Message[] found = inbox.search(baseTerm);
+        if (found == null || found.length == 0) return List.of();
+
+        // Sort by date ascending
+        Arrays.sort(found, Comparator.comparing(m -> {
+            try {
+                return m.getReceivedDate();
+            } catch (MessagingException e) {
+                return new Date(0);
+            }
+        }));
+
+        int n = Math.min(limit, found.length);
+        List<MailSummary> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            out.add(toSummary(found[i]));
+        }
+        return out;
+    }
+
+    /**
+     * Search for messages by custom ZKEmails Thread ID.
+     * This is the primary thread correlation method (survives Gmail header stripping).
+     */
+    public List<MailSummary> searchByZkeThreadId(String threadId, int limit) throws MessagingException {
+        if (threadId == null || threadId.isEmpty()) return List.of();
+
+        Date sinceDate = daysAgo(SEARCH_DAYS_LIMIT);
+        SearchTerm term = new AndTerm(new SearchTerm[]{
+                new ReceivedDateTerm(ComparisonTerm.GE, sinceDate),
+                new HeaderTerm("X-ZKEmails-Type", "msg"),
+                new HeaderTerm("X-ZKEmails-Thread-Id", threadId)
+        });
+
+        Message[] found = inbox.search(term);
+        if (found == null || found.length == 0) return List.of();
+
+        // Sort by date ascending
+        Arrays.sort(found, Comparator.comparing(m -> {
+            try {
+                return m.getReceivedDate();
+            } catch (MessagingException e) {
+                return new Date(0);
+            }
+        }));
+
+        int n = Math.min(limit, found.length);
+        List<MailSummary> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            out.add(toSummary(found[i]));
         }
         return out;
     }
