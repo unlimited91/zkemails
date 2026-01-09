@@ -8,12 +8,17 @@ import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import me.toymail.zkemails.service.ServiceContext;
+import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.SentStore;
 
 import java.text.SimpleDateFormat;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -21,7 +26,7 @@ import java.util.concurrent.CompletionException;
 
 /**
  * Controller for the Sent messages view.
- * Displays sent encrypted messages with reading pane.
+ * Displays sent threads grouped by threadId with reading pane showing all messages.
  */
 public class SentController {
     private final ServiceContext services;
@@ -29,12 +34,12 @@ public class SentController {
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("MMM dd HH:mm");
     private static final SimpleDateFormat FULL_DATE_FORMAT = new SimpleDateFormat("EEEE, MMMM d, yyyy 'at' h:mm a");
 
-    // Left pane - Message List
+    // Left pane - Thread List
     @FXML private SplitPane splitPane;
-    @FXML private TableView<SentMessageRow> messageTable;
-    @FXML private TableColumn<SentMessageRow, String> toColumn;
-    @FXML private TableColumn<SentMessageRow, String> subjectColumn;
-    @FXML private TableColumn<SentMessageRow, String> dateColumn;
+    @FXML private TableView<SentThreadRow> messageTable;
+    @FXML private TableColumn<SentThreadRow, String> toColumn;
+    @FXML private TableColumn<SentThreadRow, String> subjectColumn;
+    @FXML private TableColumn<SentThreadRow, String> dateColumn;
     @FXML private Button refreshButton;
     @FXML private Label emptyLabel;
     @FXML private Label messageCountLabel;
@@ -55,7 +60,8 @@ public class SentController {
     @FXML private ProgressIndicator loadingIndicator;
     @FXML private Label loadingLabel;
 
-    private final ObservableList<SentMessageRow> messages = FXCollections.observableArrayList();
+    private final ObservableList<SentThreadRow> threads = FXCollections.observableArrayList();
+    private String currentUserEmail;
 
     public SentController(ServiceContext services, MainController mainController) {
         this.services = services;
@@ -64,34 +70,83 @@ public class SentController {
 
     @FXML
     public void initialize() {
+        // Get current user email
+        try {
+            Config cfg = services.storeContext().zkStore().readJson("config.json", Config.class);
+            if (cfg != null) {
+                currentUserEmail = cfg.email;
+            }
+        } catch (Exception ignored) {}
+
         // Set up table columns
-        toColumn.setCellValueFactory(new PropertyValueFactory<>("to"));
-        subjectColumn.setCellValueFactory(new PropertyValueFactory<>("subject"));
-        dateColumn.setCellValueFactory(new PropertyValueFactory<>("dateString"));
+        setupTableColumns();
 
-        messageTable.setItems(messages);
+        messageTable.setItems(threads);
 
-        // Single-click selection to show message in reading pane
+        // Single-click selection to show thread in reading pane
         messageTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSel, newSel) -> {
             if (newSel != null) {
-                onMessageSelected(newSel);
+                onThreadSelected(newSel);
             }
         });
 
-        // Initial state - hide reading pane, show only message list
+        // Initial state - hide reading pane, show only thread list
         readingPane.setVisible(false);
         readingPane.setManaged(false);
         splitPane.setDividerPositions(1.0);
 
-        // Load sent messages
+        // Load sent threads
         refresh();
+    }
+
+    /**
+     * Set up table columns with thread count badge for subject.
+     */
+    private void setupTableColumns() {
+        // To column
+        toColumn.setCellValueFactory(cellData -> cellData.getValue().toProperty());
+
+        // Subject column with thread count badge
+        subjectColumn.setCellValueFactory(cellData -> cellData.getValue().subjectProperty());
+        subjectColumn.setCellFactory(col -> new TableCell<SentThreadRow, String>() {
+            @Override
+            protected void updateItem(String subject, boolean empty) {
+                super.updateItem(subject, empty);
+                if (empty || subject == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    SentThreadRow row = getTableRow() != null ? getTableRow().getItem() : null;
+                    int threadCount = row != null ? row.getMessageCount() : 1;
+
+                    HBox container = new HBox(6);
+                    container.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+                    Label subjectLabel = new Label(subject);
+                    container.getChildren().add(subjectLabel);
+
+                    // Add thread count badge if more than 1 message
+                    if (threadCount > 1) {
+                        Label badge = new Label(String.valueOf(threadCount));
+                        badge.getStyleClass().add("thread-count-badge");
+                        container.getChildren().add(badge);
+                    }
+
+                    setGraphic(container);
+                    setText(null);
+                }
+            }
+        });
+
+        // Date column
+        dateColumn.setCellValueFactory(cellData -> cellData.getValue().dateStringProperty());
     }
 
     @FXML
     public void refresh() {
         // Check if profile is active and sent store exists
         if (!services.storeContext().hasActiveProfile() || services.storeContext().sentStore() == null) {
-            messages.clear();
+            threads.clear();
             updateMessageCount(0);
             emptyLabel.setVisible(true);
             messageTable.setVisible(false);
@@ -99,28 +154,28 @@ public class SentController {
             return;
         }
 
-        showLoading("Loading sent messages...");
+        showLoading("Loading sent threads...");
 
         CompletableFuture.supplyAsync(() -> {
             try {
-                return services.storeContext().sentStore().list(50);
+                return services.storeContext().sentStore().listThreads(50);
             } catch (Exception e) {
                 throw new CompletionException(e);
             }
-        }).thenAccept((List<SentStore.SentMessage> result) -> Platform.runLater(() -> {
-            messages.clear();
-            for (var m : result) {
-                messages.add(new SentMessageRow(m));
+        }).thenAccept((List<SentStore.ThreadSummary> result) -> Platform.runLater(() -> {
+            threads.clear();
+            for (var t : result) {
+                threads.add(new SentThreadRow(t));
             }
             hideLoading();
             updateMessageCount(result.size());
             emptyLabel.setVisible(result.isEmpty());
             messageTable.setVisible(!result.isEmpty());
-            mainController.setStatus("Loaded " + result.size() + " sent messages");
+            mainController.setStatus("Loaded " + result.size() + " sent threads");
         })).exceptionally(error -> {
             Platform.runLater(() -> {
                 hideLoading();
-                messages.clear();
+                threads.clear();
                 updateMessageCount(0);
                 emptyLabel.setVisible(true);
                 messageTable.setVisible(false);
@@ -134,16 +189,16 @@ public class SentController {
         if (count == 0) {
             messageCountLabel.setText("");
         } else if (count == 1) {
-            messageCountLabel.setText("1 sent message");
+            messageCountLabel.setText("1 thread");
         } else {
-            messageCountLabel.setText(count + " sent messages");
+            messageCountLabel.setText(count + " threads");
         }
     }
 
     /**
-     * Called when a message is selected in the table.
+     * Called when a thread is selected in the table.
      */
-    private void onMessageSelected(SentMessageRow row) {
+    private void onThreadSelected(SentThreadRow row) {
         // Show the reading pane if hidden
         if (!readingPane.isVisible()) {
             readingPane.setVisible(true);
@@ -151,13 +206,42 @@ public class SentController {
             splitPane.setDividerPositions(0.35);
         }
 
-        displaySentMessage(row);
+        loadThreadContent(row.getThreadId(), row.getSubject(), row.getTo());
     }
 
     /**
-     * Display sent message content in the reading pane.
+     * Load and display all messages in a thread.
      */
-    private void displaySentMessage(SentMessageRow row) {
+    private void loadThreadContent(String threadId, String subject, String lastTo) {
+        showLoading("Loading thread...");
+
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return services.storeContext().sentStore().loadThreadMessages(threadId);
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
+        }).thenAccept((List<SentStore.SentMessage> messages) -> Platform.runLater(() -> {
+            hideLoading();
+            displayThread(messages, subject, lastTo);
+        })).exceptionally(error -> {
+            Platform.runLater(() -> {
+                hideLoading();
+                mainController.showError("Failed to load thread", error.getMessage());
+            });
+            return null;
+        });
+    }
+
+    /**
+     * Display thread messages in the reading pane as chat bubbles.
+     */
+    private void displayThread(List<SentStore.SentMessage> messages, String subject, String lastTo) {
+        if (messages.isEmpty()) {
+            showNoSelection();
+            return;
+        }
+
         // Show header and content, hide no-selection
         noSelectionPane.setVisible(false);
         noSelectionPane.setManaged(false);
@@ -167,35 +251,94 @@ public class SentController {
         messageScrollPane.setManaged(true);
 
         // Set header info
-        messageSubject.setText(row.getSubject());
-        messageTo.setText("To: " + row.getTo());
-        messageDate.setText(row.getFullDate());
+        messageSubject.setText(subject != null ? subject : "(no subject)");
+        messageTo.setText("To: " + (lastTo != null ? lastTo : "(unknown)"));
 
-        // Build message view with actual plaintext content
+        // Get latest message date
+        SentStore.SentMessage latestMsg = messages.get(messages.size() - 1);
+        Date latestDate = Date.from(Instant.ofEpochSecond(latestMsg.sentAtEpochSec));
+        messageDate.setText(FULL_DATE_FORMAT.format(latestDate));
+
+        // Build chat view
         messageContent.getChildren().clear();
         messageContent.getStyleClass().add("chat-container");
 
-        // Create sent message bubble with actual content
+        String lastDateStr = null;
+        SimpleDateFormat dayFormat = new SimpleDateFormat("EEEE, MMMM d");
+
+        for (var msg : messages) {
+            Date sentDate = Date.from(Instant.ofEpochSecond(msg.sentAtEpochSec));
+
+            // Add date separator if day changed
+            String dateStr = dayFormat.format(sentDate);
+            if (!dateStr.equals(lastDateStr)) {
+                HBox dateSeparator = new HBox();
+                dateSeparator.getStyleClass().add("chat-date-separator");
+                Label dateLabel = new Label(dateStr);
+                dateLabel.getStyleClass().add("chat-date-label");
+                dateSeparator.getChildren().add(dateLabel);
+                messageContent.getChildren().add(dateSeparator);
+                lastDateStr = dateStr;
+            }
+
+            // Create sent message bubble
+            HBox chatBubble = createSentMessageBubble(msg, sentDate);
+            messageContent.getChildren().add(chatBubble);
+        }
+
+        // Scroll to bottom (latest message)
+        Platform.runLater(() -> messageScrollPane.setVvalue(1.0));
+    }
+
+    /**
+     * Create a chat bubble for a sent message.
+     */
+    private HBox createSentMessageBubble(SentStore.SentMessage msg, Date sentDate) {
+        // Sent messages are always on the right (blue)
         VBox bubble = new VBox(2);
         bubble.getStyleClass().addAll("chat-bubble", "chat-bubble-sent");
 
-        // Show actual plaintext content
-        String content = row.getPlaintext();
-        Label body = new Label(content != null ? content : "(No content)");
+        // Recipient info
+        if (msg.toEmail != null) {
+            Label recipient = new Label("To: " + msg.toEmail);
+            recipient.getStyleClass().add("chat-bubble-header");
+            bubble.getChildren().add(recipient);
+        }
+
+        // Message body
+        String messageText = msg.plaintext != null ? msg.plaintext : "(No content)";
+        Label body = new Label(messageText);
         body.setWrapText(true);
-        body.setMaxWidth(400);
         body.getStyleClass().add("chat-bubble-body");
         bubble.getChildren().add(body);
 
-        Label time = new Label(row.getDateString());
+        // Timestamp
+        Label time = new Label(DATE_FORMAT.format(sentDate));
         time.getStyleClass().add("chat-bubble-time");
         bubble.getChildren().add(time);
 
-        HBox chatRow = new HBox();
-        chatRow.getStyleClass().add("chat-row-sent");
-        chatRow.getChildren().add(bubble);
+        // Wrap in HBox for alignment (right for sent)
+        HBox row = new HBox();
+        row.setFillHeight(false);
+        row.getStyleClass().add("chat-row-sent");
 
-        messageContent.getChildren().add(chatRow);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        row.getChildren().addAll(spacer, bubble);
+
+        return row;
+    }
+
+    /**
+     * Show the no-selection placeholder.
+     */
+    private void showNoSelection() {
+        noSelectionPane.setVisible(true);
+        noSelectionPane.setManaged(true);
+        messageHeader.setVisible(false);
+        messageHeader.setManaged(false);
+        messageScrollPane.setVisible(false);
+        messageScrollPane.setManaged(false);
     }
 
     /**
@@ -220,37 +363,35 @@ public class SentController {
     }
 
     /**
-     * Table row model for sent messages.
+     * Table row model for sent threads.
      */
-    public static class SentMessageRow {
-        private final String id;
+    public static class SentThreadRow {
+        private final String threadId;
         private final StringProperty to;
         private final StringProperty subject;
         private final StringProperty dateString;
-        private final String fullDate;
-        private final String plaintext;
-        private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("MMM dd HH:mm");
-        private static final SimpleDateFormat FULL_DATE_FORMAT = new SimpleDateFormat("EEEE, MMMM d, yyyy 'at' h:mm a");
+        private final int messageCount;
+        private static final DateTimeFormatter EPOCH_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("MMM dd HH:mm").withZone(ZoneId.systemDefault());
 
-        public SentMessageRow(SentStore.SentMessage sent) {
-            this.id = sent.id;
-            this.to = new SimpleStringProperty(sent.toEmail != null ? sent.toEmail : "(unknown)");
-            this.subject = new SimpleStringProperty(sent.subject != null ? sent.subject : "(no subject)");
-            this.plaintext = sent.plaintext;
-
-            Date sentDate = Date.from(Instant.ofEpochSecond(sent.sentAtEpochSec));
-            this.dateString = new SimpleStringProperty(DATE_FORMAT.format(sentDate));
-            this.fullDate = FULL_DATE_FORMAT.format(sentDate);
+        public SentThreadRow(SentStore.ThreadSummary summary) {
+            this.threadId = summary.threadId;
+            this.to = new SimpleStringProperty(summary.lastTo != null ? summary.lastTo : "(unknown)");
+            this.subject = new SimpleStringProperty(summary.subject != null ? summary.subject : "(no subject)");
+            this.dateString = new SimpleStringProperty(
+                summary.lastSentEpochSec > 0
+                    ? EPOCH_DATE_FORMAT.format(Instant.ofEpochSecond(summary.lastSentEpochSec))
+                    : "");
+            this.messageCount = summary.messageCount;
         }
 
-        public String getId() { return id; }
+        public String getThreadId() { return threadId; }
         public String getTo() { return to.get(); }
         public StringProperty toProperty() { return to; }
         public String getSubject() { return subject.get(); }
         public StringProperty subjectProperty() { return subject; }
         public String getDateString() { return dateString.get(); }
         public StringProperty dateStringProperty() { return dateString; }
-        public String getFullDate() { return fullDate; }
-        public String getPlaintext() { return plaintext; }
+        public int getMessageCount() { return messageCount; }
     }
 }
