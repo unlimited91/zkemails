@@ -91,7 +91,9 @@ public final class SmtpClient implements AutoCloseable {
                 Getting Started:
                 ----------------
                 1. Install zke:
-                   curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/0.0.1.beta1/install.sh | bash
+                   curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/1.0.0.beta1/install.sh | bash
+                
+                For GUI users, just run the command "zke gui". For terminal loves follow the below steps
 
                 2. Initialize with your email:
                    zke init --email %s
