@@ -4,6 +4,7 @@ import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.image.Image;
 import javafx.stage.Stage;
 import me.toymail.zkemails.ImapConnectionPool;
 import me.toymail.zkemails.gui.cache.MessageCacheService;
@@ -65,6 +66,17 @@ public class ZkeGuiApplication extends Application {
         }
 
         primaryStage.setTitle("ZKE - Zero Knowledge Emails");
+
+        // Set application icon
+        try {
+            var iconStream = getClass().getResourceAsStream("/images/zkemails-icon.png");
+            if (iconStream != null) {
+                primaryStage.getIcons().add(new Image(iconStream));
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load application icon: " + e.getMessage());
+        }
+
         primaryStage.setScene(scene);
         primaryStage.setMinWidth(900);
         primaryStage.setMinHeight(600);

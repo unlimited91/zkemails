@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.image.*?>
 <?import javafx.scene.layout.*?>
 
 <BorderPane fx:id="rootPane" xmlns:fx="http://javafx.com/fxml"
@@ -10,8 +11,11 @@
 
     <!-- Top: Header -->
     <top>
-        <HBox styleClass="header" alignment="CENTER_LEFT" spacing="15">
+        <HBox styleClass="header" alignment="CENTER_LEFT" spacing="10">
             <padding><Insets top="10" right="15" bottom="10" left="15"/></padding>
+            <ImageView fitHeight="32" fitWidth="32" preserveRatio="true">
+                <Image url="@/images/zkemails-icon.png"/>
+            </ImageView>
             <Label text="ZKE - Zero Knowledge Emails" styleClass="app-title"/>
             <Region HBox.hgrow="ALWAYS"/>
             <Label text="Profile:"/>

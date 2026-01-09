@@ -131,6 +131,10 @@
         <version>0.0.8</version>
         <configuration>
           <mainClass>me.toymail.zkemails.gui.ZkeGuiApplication</mainClass>
+          <options>
+            <option>-Xdock:name=ZKEmails</option>
+            <option>-Xdock:icon=${project.basedir}/src/main/resources/images/zkemails-icon.png</option>
+          </options>
         </configuration>
       </plugin>
 
