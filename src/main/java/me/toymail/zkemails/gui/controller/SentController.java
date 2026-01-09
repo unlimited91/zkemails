@@ -89,6 +89,16 @@ public class SentController {
 
     @FXML
     public void refresh() {
+        // Check if profile is active and sent store exists
+        if (!services.storeContext().hasActiveProfile() || services.storeContext().sentStore() == null) {
+            messages.clear();
+            updateMessageCount(0);
+            emptyLabel.setVisible(true);
+            messageTable.setVisible(false);
+            mainController.setStatus("No profile selected");
+            return;
+        }
+
         showLoading("Loading sent messages...");
 
         CompletableFuture.supplyAsync(() -> {
@@ -110,9 +120,11 @@ public class SentController {
         })).exceptionally(error -> {
             Platform.runLater(() -> {
                 hideLoading();
-                String errorMsg = error.getCause() != null ? error.getCause().getMessage() : error.getMessage();
-                mainController.setStatus("Error: " + errorMsg);
-                mainController.showError("Failed to load sent messages", errorMsg);
+                messages.clear();
+                updateMessageCount(0);
+                emptyLabel.setVisible(true);
+                messageTable.setVisible(false);
+                mainController.setStatus("No sent messages found");
             });
             return null;
         });
