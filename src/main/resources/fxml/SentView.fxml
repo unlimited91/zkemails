@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<StackPane xmlns:fx="http://javafx.com/fxml"
+      fx:controller="me.toymail.zkemails.gui.controller.SentController">
+
+    <!-- Main Content -->
+    <SplitPane fx:id="splitPane" dividerPositions="0.35">
+        <!-- Left: Sent Message List -->
+        <VBox styleClass="message-list-pane">
+            <!-- Toolbar -->
+            <HBox styleClass="toolbar" alignment="CENTER_LEFT" spacing="10">
+                <Button fx:id="refreshButton" text="Refresh" onAction="#refresh" styleClass="button-primary"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="messageCountLabel" text="" styleClass="message-count"/>
+            </HBox>
+
+            <!-- Message Table -->
+            <TableView fx:id="messageTable" VBox.vgrow="ALWAYS" styleClass="message-table">
+                <columnResizePolicy>
+                    <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                </columnResizePolicy>
+                <columns>
+                    <TableColumn fx:id="toColumn" text="To" prefWidth="150"/>
+                    <TableColumn fx:id="subjectColumn" text="Subject" prefWidth="300"/>
+                    <TableColumn fx:id="dateColumn" text="Date" prefWidth="120"/>
+                </columns>
+                <placeholder>
+                    <Label text="No sent messages"/>
+                </placeholder>
+            </TableView>
+
+            <!-- Empty State -->
+            <Label fx:id="emptyLabel" text="No sent encrypted messages found."
+                   styleClass="empty-state" visible="false" alignment="CENTER" maxWidth="Infinity"/>
+        </VBox>
+
+        <!-- Right: Reading Pane -->
+        <VBox fx:id="readingPane" styleClass="reading-pane">
+            <!-- Message Header -->
+            <VBox fx:id="messageHeader" styleClass="message-header" visible="false" managed="false">
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <VBox HBox.hgrow="ALWAYS" spacing="2">
+                        <Label fx:id="messageSubject" styleClass="message-subject"/>
+                        <Label fx:id="messageTo" styleClass="message-from"/>
+                        <Label fx:id="messageDate" styleClass="message-date"/>
+                    </VBox>
+                    <Label styleClass="encrypted-badge" text="Encrypted"/>
+                    <Button fx:id="closeReadingPaneButton" text="X" onAction="#onCloseReadingPane" styleClass="button-close"/>
+                </HBox>
+            </VBox>
+
+            <!-- Message Content -->
+            <ScrollPane fx:id="messageScrollPane" fitToWidth="true" VBox.vgrow="ALWAYS" styleClass="message-scroll">
+                <VBox fx:id="messageContent" styleClass="message-content" spacing="15">
+                    <padding><Insets top="15" right="15" bottom="15" left="15"/></padding>
+                </VBox>
+            </ScrollPane>
+
+            <!-- No Selection Placeholder -->
+            <VBox fx:id="noSelectionPane" alignment="CENTER" VBox.vgrow="ALWAYS" styleClass="no-selection-pane">
+                <Label text="Select a sent message to view" styleClass="no-selection-text"/>
+            </VBox>
+        </VBox>
+    </SplitPane>
+
+    <!-- Centered Loading Overlay -->
+    <VBox fx:id="loadingOverlay" alignment="CENTER" visible="false" styleClass="loading-overlay">
+        <ProgressIndicator fx:id="loadingIndicator" prefWidth="50" prefHeight="50"/>
+        <Label fx:id="loadingLabel" text="Loading sent messages..." styleClass="loading-text"/>
+    </VBox>
+</StackPane>
