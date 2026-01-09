@@ -128,10 +128,13 @@ public class MessagesController {
         Platform.runLater(() -> {
             switch (event.type()) {
                 case LOADING_STARTED:
-                    showLoading("Loading messages...");
+                    // Only show loading modal for user-initiated refreshes (not background sync)
+                    if (!event.isBackground()) {
+                        showLoading("Loading messages...");
+                    }
                     break;
                 case LOADING_FINISHED:
-                    hideLoading();
+                    hideLoading();  // Always hide (safe even if not shown)
                     break;
                 case MESSAGES_UPDATED:
                     loadFromCache();

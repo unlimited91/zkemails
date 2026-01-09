@@ -25,6 +25,9 @@
         </HBox>
 
         <TableView fx:id="pendingTable" prefHeight="200">
+            <columnResizePolicy>
+                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+            </columnResizePolicy>
             <columns>
                 <TableColumn fx:id="pendingIdColumn" text="Invite ID" prefWidth="150"/>
                 <TableColumn fx:id="pendingEmailColumn" text="From" prefWidth="200"/>
@@ -47,6 +50,9 @@
         <Label text="Outgoing Invites (Sent by You)" style="-fx-font-weight: bold;"/>
 
         <TableView fx:id="outgoingTable" prefHeight="200">
+            <columnResizePolicy>
+                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+            </columnResizePolicy>
             <columns>
                 <TableColumn fx:id="outgoingEmailColumn" text="To" prefWidth="200"/>
                 <TableColumn fx:id="outgoingSubjectColumn" text="Subject" prefWidth="200"/>

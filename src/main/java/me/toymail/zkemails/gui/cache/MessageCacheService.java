@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -39,6 +40,9 @@ public class MessageCacheService {
     // Listeners for cache updates
     private final List<Consumer<CacheUpdateEvent>> updateListeners =
         new CopyOnWriteArrayList<>();
+
+    // Track current refresh to prevent concurrent execution
+    private final AtomicReference<CompletableFuture<Void>> currentRefresh = new AtomicReference<>();
 
     public MessageCacheService(ServiceContext services) {
         this.services = services;
@@ -126,6 +130,7 @@ public class MessageCacheService {
 
     /**
      * Poll for updates (called by scheduler).
+     * Uses background flag to avoid showing loading modal.
      */
     private void pollForUpdates() {
         if (currentPassword == null || currentProfile == null) {
@@ -133,21 +138,43 @@ public class MessageCacheService {
         }
 
         log.debug("Polling for message updates...");
-        refreshAsync();
+        refreshAsyncInternal(true);  // true = background, silent
     }
 
     /**
      * Refresh by syncing from IMAP to local storage.
+     * User-initiated refresh - shows loading modal.
      */
     public CompletableFuture<Void> refreshAsync() {
+        return refreshAsyncInternal(false);
+    }
+
+    /**
+     * Internal refresh with concurrency control and background flag.
+     * @param isBackground true for background sync (silent), false for user-initiated (shows modal)
+     */
+    private CompletableFuture<Void> refreshAsyncInternal(boolean isBackground) {
         if (currentPassword == null) {
             return CompletableFuture.completedFuture(null);
         }
 
-        cache.setLoading(true);
-        notifyListeners(new CacheUpdateEvent(CacheUpdateType.LOADING_STARTED, null));
+        // Check if refresh already in progress
+        CompletableFuture<Void> existing = currentRefresh.get();
+        if (existing != null && !existing.isDone()) {
+            if (isBackground) {
+                // Background sync skips if refresh already in progress
+                log.debug("Skipping background sync - refresh already in progress");
+                return existing;
+            }
+            // User-initiated: return existing future to avoid duplicate work
+            log.debug("Refresh already in progress, returning existing future");
+            return existing;
+        }
 
-        return CompletableFuture.runAsync(() -> {
+        cache.setLoading(true);
+        notifyListeners(new CacheUpdateEvent(CacheUpdateType.LOADING_STARTED, null, isBackground));
+
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             try {
                 // Sync from IMAP to local storage
                 var result = syncService.sync(currentPassword, MESSAGE_FETCH_LIMIT);
@@ -156,20 +183,26 @@ public class MessageCacheService {
 
                 if (result.newMessages() > 0) {
                     log.info("Synced {} new messages to local storage", result.newMessages());
-                    notifyListeners(new CacheUpdateEvent(CacheUpdateType.MESSAGES_UPDATED, result.newMessages()));
+                    notifyListeners(new CacheUpdateEvent(CacheUpdateType.MESSAGES_UPDATED, result.newMessages(), isBackground));
                 } else {
                     log.debug("No new messages to sync");
+                    // Still notify so UI can update status
+                    notifyListeners(new CacheUpdateEvent(CacheUpdateType.MESSAGES_UPDATED, 0, isBackground));
                 }
 
             } catch (Exception e) {
                 log.error("Failed to sync: {}", e.getMessage());
                 cache.setLastError(e.getMessage());
-                notifyListeners(new CacheUpdateEvent(CacheUpdateType.ERROR, e.getMessage()));
+                notifyListeners(new CacheUpdateEvent(CacheUpdateType.ERROR, e.getMessage(), isBackground));
             } finally {
                 cache.setLoading(false);
-                notifyListeners(new CacheUpdateEvent(CacheUpdateType.LOADING_FINISHED, null));
+                currentRefresh.set(null);  // Clear tracking
+                notifyListeners(new CacheUpdateEvent(CacheUpdateType.LOADING_FINISHED, null, isBackground));
             }
         }, fetchExecutor);
+
+        currentRefresh.set(future);
+        return future;
     }
 
     /**
@@ -396,5 +429,10 @@ public class MessageCacheService {
         ERROR
     }
 
-    public record CacheUpdateEvent(CacheUpdateType type, Object data) {}
+    public record CacheUpdateEvent(CacheUpdateType type, Object data, boolean isBackground) {
+        // Convenience constructor for backward compatibility
+        public CacheUpdateEvent(CacheUpdateType type, Object data) {
+            this(type, data, false);
+        }
+    }
 }

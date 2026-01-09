@@ -99,10 +99,9 @@ public class MainController {
                 showProgress(false);
                 break;
             case MESSAGES_UPDATED:
-                int count = (Integer) event.data();
-                long lastRefresh = cacheService.getCacheStats().lastRefreshTime();
-                String time = new SimpleDateFormat("HH:mm:ss").format(new Date(lastRefresh));
-                setStatus("Loaded " + count + " messages (last sync: " + time + ")");
+                int count = event.data() instanceof Integer ? (Integer) event.data() : 0;
+                String time = new SimpleDateFormat("HH:mm:ss").format(new Date());
+                setStatus("Synced " + count + " new messages (last sync: " + time + ")");
                 break;
             case ERROR:
                 setStatus("Error: " + event.data());
