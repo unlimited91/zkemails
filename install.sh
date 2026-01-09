@@ -460,6 +460,9 @@ Then try:
   zke init --email your@email.com
 
 Quick start:
+  zke gui    # GUI loads up with all the functionality of the CLI
+
+Quick start (For terminal lovers:
   zke init --email you@gmail.com     # Initialize with your email
   zke invite --to friend@email.com   # Send an invite
   zke sem                            # Send encrypted message
