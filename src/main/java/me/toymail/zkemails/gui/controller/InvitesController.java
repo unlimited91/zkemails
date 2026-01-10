@@ -37,6 +37,7 @@ public class InvitesController {
     @FXML private TableColumn<InviteRow, String> outgoingStatusColumn;
 
     @FXML private Label statusLabel;
+    @FXML private TextField inviteEmailField;
 
     private final ObservableList<InviteRow> pendingInvites = FXCollections.observableArrayList();
     private final ObservableList<InviteRow> outgoingInvites = FXCollections.observableArrayList();
@@ -141,6 +142,76 @@ public class InvitesController {
                 public void onError(Throwable error) {
                     mainController.showProgress(false);
                     mainController.showError("Error", error.getMessage());
+                }
+            });
+    }
+
+    @FXML
+    public void sendInvite() {
+        String email = inviteEmailField.getText();
+        if (email == null || email.isBlank() || !email.contains("@")) {
+            mainController.showError("Validation Error", "Please enter a valid email address");
+            return;
+        }
+
+        // getPassword() first checks cache/keychain silently, only prompts if not found
+        String password = mainController.getPassword();
+        if (password == null) return;
+
+        mainController.showProgress(true);
+        mainController.setStatus("Sending invite to " + email + "...");
+
+        TaskRunner.run("Sending invite",
+            () -> services.invites().sendInvite(password, email),
+            new TaskRunner.TaskCallback<>() {
+                @Override
+                public void onSuccess(InviteService.SendInviteResult result) {
+                    mainController.showProgress(false);
+                    if (result.success()) {
+                        mainController.setStatus("Invite sent!");
+                        mainController.showInfo("Invite Sent",
+                            "Invite sent to " + email + "\nInvite ID: " + result.inviteId());
+                        inviteEmailField.clear();
+                        refresh();
+                    } else {
+                        mainController.setStatus("Failed to send invite");
+                        mainController.showError("Send Failed", result.message());
+                    }
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    mainController.showProgress(false);
+                    mainController.showError("Error", error.getMessage());
+                }
+            });
+    }
+
+    @FXML
+    public void syncAcceptMessages() {
+        // getPassword() first checks cache/keychain silently, only prompts if not found
+        String password = mainController.getPassword();
+        if (password == null) return;
+
+        mainController.showProgress(true);
+        mainController.setStatus("Syncing accept messages...");
+
+        TaskRunner.run("Syncing accepts",
+            () -> services.invites().syncAcceptMessages(password, 200),
+            new TaskRunner.TaskCallback<>() {
+                @Override
+                public void onSuccess(Integer count) {
+                    mainController.showProgress(false);
+                    mainController.setStatus("Sync complete");
+                    mainController.showInfo("Sync Complete",
+                        count + " contact(s) updated with keys from accept messages.");
+                    refresh();
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    mainController.showProgress(false);
+                    mainController.showError("Sync Error", error.getMessage());
                 }
             });
     }

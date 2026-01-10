@@ -7,6 +7,9 @@ import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.stage.Stage;
 import me.toymail.zkemails.ImapConnectionPool;
+
+import javax.imageio.ImageIO;
+import java.awt.Taskbar;
 import me.toymail.zkemails.gui.cache.MessageCacheService;
 import me.toymail.zkemails.gui.controller.MainController;
 import me.toymail.zkemails.gui.util.TaskRunner;
@@ -20,6 +23,24 @@ import java.io.IOException;
 public class ZkeGuiApplication extends Application {
     private static ServiceContext serviceContext;
     private static MessageCacheService cacheService;
+
+    // Set macOS dock icon early, before JavaFX initializes
+    static {
+        try {
+            if (Taskbar.isTaskbarSupported()) {
+                var taskbar = Taskbar.getTaskbar();
+                if (taskbar.isSupported(Taskbar.Feature.ICON_IMAGE)) {
+                    var dockIconStream = ZkeGuiApplication.class.getResourceAsStream("/images/zkemails-icon.png");
+                    if (dockIconStream != null) {
+                        var dockIcon = ImageIO.read(dockIconStream);
+                        taskbar.setIconImage(dockIcon);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Silently ignore - dock icon is optional
+        }
+    }
 
     /**
      * Set the service context before launching.
@@ -67,7 +88,7 @@ public class ZkeGuiApplication extends Application {
 
         primaryStage.setTitle("ZKE - Zero Knowledge Emails");
 
-        // Set application icon
+        // Set application icon (window icon)
         try {
             var iconStream = getClass().getResourceAsStream("/images/zkemails-icon.png");
             if (iconStream != null) {
