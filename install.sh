@@ -45,7 +45,7 @@ readonly JAR_NAME="zkemails.jar"
 readonly MIN_JAVA_VERSION=17
 
 # Version to install (can be overridden via -v flag)
-ZKEMAILS_VERSION="0.0.1.beta1"
+ZKEMAILS_VERSION="1.0.0.beta2"
 
 # =============================================================================
 # OUTPUT FORMATTING
@@ -53,10 +53,10 @@ ZKEMAILS_VERSION="0.0.1.beta1"
 
 # Terminal colors (disabled if not a TTY)
 if [[ -t 1 ]]; then
-    readonly RED='\033[0;31m'
-    readonly GREEN='\033[0;32m'
-    readonly YELLOW='\033[1;33m'
-    readonly NC='\033[0m'
+    readonly RED=$'\033[0;31m'
+    readonly GREEN=$'\033[0;32m'
+    readonly YELLOW=$'\033[1;33m'
+    readonly NC=$'\033[0m'
 else
     readonly RED=''
     readonly GREEN=''
@@ -460,6 +460,9 @@ Then try:
   zke init --email your@email.com
 
 Quick start:
+  zke gui    # GUI loads up with all the functionality of the CLI
+
+Quick start (For terminal lovers:
   zke init --email you@gmail.com     # Initialize with your email
   zke invite --to friend@email.com   # Send an invite
   zke sem                            # Send encrypted message

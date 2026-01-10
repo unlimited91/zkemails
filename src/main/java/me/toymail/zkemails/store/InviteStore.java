@@ -71,6 +71,17 @@ public final class InviteStore {
         writeAll(all);
     }
 
+    /** Get an incoming invite by ID. */
+    public Invite getIncoming(String inviteId) throws IOException {
+        List<Invite> all = listAll();
+        for (Invite i : all) {
+            if (inviteId.equals(i.inviteId) && "in".equalsIgnoreCase(i.direction)) {
+                return i;
+            }
+        }
+        return null;
+    }
+
     /** Mark an incoming invite as acked so it disappears from `ls invi`. */
     public void markIncomingAcked(String inviteId) throws IOException {
         store.ensure();

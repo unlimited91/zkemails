@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<ScrollPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="me.toymail.zkemails.gui.controller.SettingsController"
+            fitToWidth="true">
+    <VBox spacing="20">
+        <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+
+        <Label text="Settings" styleClass="section-title"/>
+
+        <!-- Current Profile Section -->
+        <VBox fx:id="profileSection" styleClass="card" spacing="10">
+            <Label text="Current Profile" style="-fx-font-weight: bold; -fx-font-size: 16px;"/>
+
+            <GridPane hgap="10" vgap="8">
+                <columnConstraints>
+                    <ColumnConstraints minWidth="120" halignment="RIGHT"/>
+                    <ColumnConstraints hgrow="ALWAYS"/>
+                </columnConstraints>
+
+                <Label text="Active Profile:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                <Label fx:id="activeProfileLabel" text="-" style="-fx-font-weight: bold;"
+                       GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+
+                <Label text="Fingerprint:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                <Label fx:id="fingerprintLabel" text="-" style="-fx-font-family: monospace; -fx-font-size: 11px;"
+                       GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+
+                <Label text="Keychain:" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                <HBox spacing="10" alignment="CENTER_LEFT" GridPane.rowIndex="2" GridPane.columnIndex="1">
+                    <Label fx:id="keychainStatusLabel" text="-"/>
+                    <Button text="Delete Saved Password" onAction="#deleteCredential" styleClass="button-danger"/>
+                </HBox>
+            </GridPane>
+        </VBox>
+
+        <Separator/>
+
+        <!-- Initialize New Profile Section -->
+        <VBox fx:id="initSection" styleClass="card" spacing="15">
+            <Label text="Initialize New Profile" style="-fx-font-weight: bold; -fx-font-size: 16px;"/>
+            <Label text="Set up ZKE with your email account. For Gmail, use an App Password."
+                   style="-fx-text-fill: #7f8c8d; -fx-font-size: 12px;" wrapText="true"/>
+
+            <GridPane hgap="10" vgap="10">
+                <columnConstraints>
+                    <ColumnConstraints minWidth="100" halignment="RIGHT"/>
+                    <ColumnConstraints hgrow="ALWAYS" maxWidth="400"/>
+                </columnConstraints>
+
+                <Label text="Email:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                <TextField fx:id="emailField" promptText="your@gmail.com"
+                           GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+
+                <Label text="Password:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                <PasswordField fx:id="passwordField" promptText="App password"
+                               GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+
+                <Label text="IMAP Host:" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                <TextField fx:id="imapHostField" GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+
+                <Label text="IMAP Port:" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
+                <TextField fx:id="imapPortField" GridPane.rowIndex="3" GridPane.columnIndex="1"/>
+
+                <Label text="SMTP Host:" GridPane.rowIndex="4" GridPane.columnIndex="0"/>
+                <TextField fx:id="smtpHostField" GridPane.rowIndex="4" GridPane.columnIndex="1"/>
+
+                <Label text="SMTP Port:" GridPane.rowIndex="5" GridPane.columnIndex="0"/>
+                <TextField fx:id="smtpPortField" GridPane.rowIndex="5" GridPane.columnIndex="1"/>
+            </GridPane>
+
+            <CheckBox fx:id="savePasswordCheck" text="Save password to system keychain" selected="true"/>
+
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Button fx:id="initButton" text="Initialize Profile" onAction="#initializeProfile"
+                        styleClass="button-primary"/>
+                <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+            </HBox>
+
+            <VBox spacing="5" style="-fx-padding: 10; -fx-background-color: #f8f9fa; -fx-background-radius: 5;">
+                <Label text="Gmail App Password Setup:" style="-fx-font-weight: bold;"/>
+                <Label text="1. Visit https://myaccount.google.com/apppasswords" style="-fx-font-size: 12px;"/>
+                <Label text="2. Create an app password for 'zke'" style="-fx-font-size: 12px;"/>
+                <Label text="3. Use the 16-character password (remove spaces)" style="-fx-font-size: 12px;"/>
+            </VBox>
+        </VBox>
+    </VBox>
+</ScrollPane>

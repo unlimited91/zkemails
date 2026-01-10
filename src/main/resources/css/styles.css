@@ -1,0 +1,612 @@
+/* Root styling */
+.root {
+    -fx-font-family: "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    -fx-font-size: 14px;
+}
+
+.root-pane {
+    -fx-background-color: #f5f5f5;
+}
+
+/* Header */
+.header {
+    -fx-background-color: #2c3e50;
+    -fx-padding: 10 15;
+}
+
+.app-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+}
+
+.header .label {
+    -fx-text-fill: #ecf0f1;
+}
+
+.header .combo-box {
+    -fx-background-color: white;
+}
+
+/* Sidebar */
+.sidebar {
+    -fx-background-color: #34495e;
+}
+
+.sidebar-section {
+    -fx-text-fill: #7f8c8d;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 10 5 5 5;
+}
+
+.nav-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ecf0f1;
+    -fx-alignment: CENTER-LEFT;
+    -fx-padding: 10 15;
+    -fx-cursor: hand;
+}
+
+.nav-button:hover {
+    -fx-background-color: #3d566e;
+}
+
+.nav-button-active {
+    -fx-background-color: #3498db;
+}
+
+.nav-button-active:hover {
+    -fx-background-color: #2980b9;
+}
+
+/* Content Area */
+.content-area {
+    -fx-background-color: white;
+}
+
+/* Status Bar */
+.status-bar {
+    -fx-background-color: #ecf0f1;
+    -fx-border-color: #bdc3c7;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* Tables */
+.table-view {
+    -fx-background-color: white;
+}
+
+.table-view .column-header {
+    -fx-background-color: #f8f9fa;
+    -fx-font-weight: bold;
+}
+
+.table-view .table-row-cell:selected {
+    -fx-background-color: #3498db;
+}
+
+.table-view .table-row-cell:selected .text {
+    -fx-fill: white;
+}
+
+/* Unread messages */
+.message-unread {
+    -fx-font-weight: bold;
+}
+
+/* Cards/Panels */
+.card {
+    -fx-background-color: white;
+    -fx-background-radius: 5;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 5, 0, 0, 2);
+    -fx-padding: 15;
+}
+
+/* Buttons */
+.button-primary {
+    -fx-background-color: #3498db;
+    -fx-text-fill: white;
+    -fx-cursor: hand;
+}
+
+.button-primary:hover {
+    -fx-background-color: #2980b9;
+}
+
+.button-success {
+    -fx-background-color: #27ae60;
+    -fx-text-fill: white;
+    -fx-cursor: hand;
+}
+
+.button-success:hover {
+    -fx-background-color: #229954;
+}
+
+.button-danger {
+    -fx-background-color: #e74c3c;
+    -fx-text-fill: white;
+    -fx-cursor: hand;
+}
+
+.button-danger:hover {
+    -fx-background-color: #c0392b;
+}
+
+/* Text Areas */
+.text-area {
+    -fx-background-color: white;
+    -fx-border-color: #bdc3c7;
+    -fx-border-radius: 3;
+}
+
+.text-area:focused {
+    -fx-border-color: #3498db;
+}
+
+/* Form Labels */
+.form-label {
+    -fx-font-weight: bold;
+}
+
+/* Encryption Badge */
+.encrypted-badge {
+    -fx-background-color: #27ae60;
+    -fx-text-fill: white;
+    -fx-padding: 2 8;
+    -fx-background-radius: 10;
+    -fx-font-size: 11px;
+}
+
+/* Section Titles */
+.section-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 10 0;
+}
+
+/* Message Bubbles */
+.message-bubble {
+    -fx-background-color: #f1f3f4;
+    -fx-background-radius: 10;
+    -fx-padding: 10 15;
+}
+
+.message-bubble-sent {
+    -fx-background-color: #3498db;
+}
+
+.message-bubble-sent .text {
+    -fx-fill: white;
+}
+
+/* Empty State */
+.empty-state {
+    -fx-text-fill: #7f8c8d;
+    -fx-font-size: 16px;
+}
+
+/* Toolbar */
+.toolbar {
+    -fx-background-color: #f8f9fa;
+    -fx-padding: 10;
+    -fx-border-color: #e9ecef;
+    -fx-border-width: 0 0 1 0;
+}
+
+/* Contact Status */
+.status-ready {
+    -fx-text-fill: #27ae60;
+    -fx-font-weight: bold;
+}
+
+.status-pending {
+    -fx-text-fill: #f39c12;
+    -fx-font-weight: bold;
+}
+
+/* Invite Status */
+.invite-pending {
+    -fx-background-color: #f39c12;
+    -fx-text-fill: white;
+    -fx-padding: 2 6;
+    -fx-background-radius: 3;
+}
+
+.invite-acked {
+    -fx-background-color: #27ae60;
+    -fx-text-fill: white;
+    -fx-padding: 2 6;
+    -fx-background-radius: 3;
+}
+
+/* ========== Outlook-style Message View ========== */
+
+/* Loading Overlay */
+.loading-overlay {
+    -fx-background-color: rgba(255, 255, 255, 0.9);
+    -fx-spacing: 15;
+}
+
+.loading-text {
+    -fx-font-size: 16px;
+    -fx-text-fill: #555;
+}
+
+/* Message List Pane */
+.message-list-pane {
+    -fx-background-color: #f8f9fa;
+    -fx-min-width: 300;
+}
+
+.message-count {
+    -fx-text-fill: #666;
+    -fx-font-size: 12px;
+}
+
+/* Message Table */
+.message-table .table-row-cell {
+    -fx-padding: 8 5;
+    -fx-border-color: transparent transparent #e9ecef transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.message-table .table-row-cell:selected {
+    -fx-background-color: #0078d4;
+}
+
+.message-table .table-row-cell:selected .text {
+    -fx-fill: white;
+}
+
+.message-table .table-row-cell:hover:filled:!selected {
+    -fx-background-color: #e8f4fc;
+}
+
+/* Reading Pane */
+.reading-pane {
+    -fx-background-color: white;
+}
+
+/* Message Header */
+.message-header {
+    -fx-background-color: #f8f9fa;
+    -fx-padding: 15;
+    -fx-border-color: #e9ecef;
+    -fx-border-width: 0 0 1 0;
+}
+
+.message-subject {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1a1a1a;
+}
+
+.message-from {
+    -fx-font-size: 14px;
+    -fx-text-fill: #333;
+}
+
+.message-date {
+    -fx-font-size: 12px;
+    -fx-text-fill: #666;
+}
+
+.message-to {
+    -fx-font-size: 12px;
+    -fx-text-fill: #555;
+}
+
+.message-cc {
+    -fx-font-size: 12px;
+    -fx-text-fill: #777;
+    -fx-font-style: italic;
+}
+
+.message-bcc {
+    -fx-font-size: 12px;
+    -fx-text-fill: #999;
+    -fx-font-style: italic;
+}
+
+/* Message Content */
+.message-scroll {
+    -fx-background-color: white;
+    -fx-border-color: transparent;
+}
+
+.message-content {
+    -fx-background-color: white;
+}
+
+/* Modern Chat Bubble UI */
+.chat-container {
+    -fx-background-color: #f5f5f5;
+    -fx-padding: 10;
+}
+
+.chat-bubble {
+    -fx-background-radius: 18;
+    -fx-padding: 10 14;
+    -fx-min-width: 100;
+}
+
+.chat-bubble-received {
+    -fx-background-color: #e4e6eb;
+}
+
+.chat-bubble-sent {
+    -fx-background-color: #0084ff;
+}
+
+.chat-bubble-sent .chat-bubble-body {
+    -fx-text-fill: white;
+}
+
+.chat-bubble-header {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #65676b;
+    -fx-padding: 0 0 3 0;
+}
+
+.chat-bubble-sent .chat-bubble-header {
+    -fx-text-fill: rgba(255,255,255,0.8);
+}
+
+.chat-bubble-body {
+    -fx-font-size: 14px;
+    -fx-text-fill: #050505;
+}
+
+.chat-bubble-time {
+    -fx-font-size: 10px;
+    -fx-text-fill: #65676b;
+    -fx-padding: 4 0 0 0;
+}
+
+.chat-bubble-sent .chat-bubble-time {
+    -fx-text-fill: rgba(255,255,255,0.7);
+}
+
+.chat-row-received {
+    -fx-alignment: CENTER_LEFT;
+    -fx-padding: 4 0;
+}
+
+.chat-row-sent {
+    -fx-alignment: CENTER_RIGHT;
+    -fx-padding: 4 0;
+}
+
+.chat-date-separator {
+    -fx-alignment: CENTER;
+    -fx-padding: 15 0;
+}
+
+.chat-date-label {
+    -fx-background-color: #e4e6eb;
+    -fx-background-radius: 12;
+    -fx-padding: 4 12;
+    -fx-font-size: 11px;
+    -fx-text-fill: #65676b;
+}
+
+/* Legacy thread message styles - keeping for backward compatibility */
+.thread-message {
+    -fx-background-color: #f1f3f4;
+    -fx-background-radius: 8;
+    -fx-padding: 12 15;
+}
+
+.thread-message-sent {
+    -fx-background-color: #e3f2fd;
+}
+
+.thread-message-header {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333;
+}
+
+.thread-message-date {
+    -fx-font-size: 11px;
+    -fx-text-fill: #888;
+}
+
+.thread-message-body {
+    -fx-font-size: 14px;
+    -fx-text-fill: #1a1a1a;
+}
+
+/* No Selection Pane */
+.no-selection-pane {
+    -fx-background-color: #fafafa;
+}
+
+.no-selection-text {
+    -fx-font-size: 16px;
+    -fx-text-fill: #999;
+}
+
+/* Reply Section */
+.reply-section {
+    -fx-background-color: #f8f9fa;
+    -fx-padding: 15;
+    -fx-border-color: #e9ecef;
+    -fx-border-width: 1 0 0 0;
+}
+
+.reply-label {
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+}
+
+.reply-button-bar {
+    -fx-background-color: #f8f9fa;
+    -fx-border-color: #e9ecef;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* Secondary Button */
+.button-secondary {
+    -fx-background-color: #e9ecef;
+    -fx-text-fill: #333;
+    -fx-cursor: hand;
+}
+
+.button-secondary:hover {
+    -fx-background-color: #dee2e6;
+}
+
+/* Split Pane Styling */
+.split-pane {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
+.split-pane > .split-pane-divider {
+    -fx-background-color: #e9ecef;
+    -fx-padding: 0 2;
+}
+
+/* Thread Count Badge */
+.thread-count-badge {
+    -fx-background-color: #6c757d;
+    -fx-text-fill: white;
+    -fx-padding: 1 6;
+    -fx-background-radius: 10;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+/* Unread indicator dot */
+.unread-dot {
+    -fx-fill: #0078d4;
+}
+
+/* Attachment Links in Chat Bubbles */
+.chat-attachments {
+    -fx-padding: 8 0 0 0;
+    -fx-border-color: rgba(0,0,0,0.1);
+    -fx-border-width: 1 0 0 0;
+}
+
+.attachment-link {
+    -fx-text-fill: #0066cc;
+    -fx-underline: false;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
+}
+
+.attachment-link:hover {
+    -fx-underline: true;
+}
+
+.attachment-link:disabled {
+    -fx-text-fill: #999;
+    -fx-cursor: default;
+}
+
+.chat-bubble-sent .attachment-link {
+    -fx-text-fill: white;
+}
+
+.chat-bubble-sent .attachment-link:disabled {
+    -fx-text-fill: rgba(255,255,255,0.6);
+}
+
+.chat-bubble-sent .chat-attachments {
+    -fx-border-color: rgba(255,255,255,0.2);
+}
+
+/* WhatsApp-like reply buttons */
+.reply-icon-btn {
+    -fx-background-color: #f0f0f0;
+    -fx-background-radius: 18;
+    -fx-text-fill: #555;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+    -fx-padding: 0;
+}
+
+.reply-icon-btn:hover {
+    -fx-background-color: #e0e0e0;
+}
+
+.reply-send-btn {
+    -fx-background-color: #25D366;
+    -fx-background-radius: 18;
+    -fx-text-fill: white;
+    -fx-font-size: 14px;
+    -fx-cursor: hand;
+    -fx-padding: 0;
+}
+
+.reply-send-btn:hover {
+    -fx-background-color: #1fb855;
+}
+
+.attachment-list-text {
+    -fx-font-size: 12px;
+    -fx-text-fill: #666;
+    -fx-padding: 2 8;
+    -fx-background-color: #e8f4e8;
+    -fx-background-radius: 10;
+}
+
+.attachment-clear-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: #999;
+    -fx-font-size: 12px;
+    -fx-cursor: hand;
+    -fx-padding: 0;
+}
+
+.attachment-clear-btn:hover {
+    -fx-text-fill: #e74c3c;
+}
+
+/* ========== Recipient Chip Styles (Compose View) ========== */
+
+.recipient-chip {
+    -fx-background-color: #3498db;
+    -fx-text-fill: white;
+    -fx-padding: 3 8;
+    -fx-background-radius: 12;
+    -fx-font-size: 12px;
+    -fx-cursor: hand;
+}
+
+.recipient-chip:hover {
+    -fx-background-color: #e74c3c;  /* Red on hover = click to remove */
+}
+
+/* Add button for recipients */
+.button-add {
+    -fx-background-color: #27ae60;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-cursor: hand;
+    -fx-padding: 2 8;
+}
+
+.button-add:hover {
+    -fx-background-color: #229954;
+}
+
+/* CC/BCC toggle button */
+.cc-bcc-toggle {
+    -fx-background-color: transparent;
+    -fx-text-fill: #3498db;
+    -fx-font-size: 12px;
+    -fx-cursor: hand;
+    -fx-underline: true;
+}
+
+.cc-bcc-toggle:hover {
+    -fx-text-fill: #2980b9;
+}

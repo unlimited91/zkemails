@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="me.toymail.zkemails.gui.controller.ContactsVersionsController"
+      spacing="10">
+    <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+
+    <!-- Header -->
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <Label text="Contact Version History" styleClass="section-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="Back to Contacts" onAction="#backToContacts"/>
+        <Button text="Refresh" onAction="#refresh"/>
+    </HBox>
+
+    <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+
+    <!-- Main Content -->
+    <SplitPane dividerPositions="0.35" VBox.vgrow="ALWAYS">
+        <!-- Left: Version list -->
+        <VBox spacing="10">
+            <padding><Insets top="5" right="5" bottom="5" left="5"/></padding>
+            <Label text="Versions" style="-fx-font-weight: bold;"/>
+            <TableView fx:id="versionsTable" VBox.vgrow="ALWAYS">
+                <columns>
+                    <TableColumn fx:id="dateColumn" text="Date" prefWidth="140"/>
+                    <TableColumn fx:id="countColumn" text="Contacts" prefWidth="70"/>
+                    <TableColumn fx:id="sizeColumn" text="Size" prefWidth="60"/>
+                </columns>
+                <placeholder>
+                    <Label text="No version history yet.&#10;Versions are created automatically&#10;when contacts change."/>
+                </placeholder>
+            </TableView>
+            <Label text="Click a version to compare with current" style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
+        </VBox>
+
+        <!-- Right: Diff view -->
+        <VBox spacing="10">
+            <padding><Insets top="5" right="5" bottom="5" left="5"/></padding>
+            <HBox spacing="5" alignment="CENTER_LEFT">
+                <Label text="Comparing:" style="-fx-font-weight: bold;"/>
+                <Label fx:id="compareLabel" text="Select a version"/>
+            </HBox>
+            <TableView fx:id="diffTable" VBox.vgrow="ALWAYS">
+                <columns>
+                    <TableColumn fx:id="changeTypeColumn" text="Change" prefWidth="80"/>
+                    <TableColumn fx:id="emailColumn" text="Email" prefWidth="200"/>
+                    <TableColumn fx:id="detailsColumn" text="Details" prefWidth="250"/>
+                </columns>
+                <placeholder>
+                    <Label text="Select a version from the left&#10;to see changes compared to current."/>
+                </placeholder>
+            </TableView>
+
+            <!-- Legend -->
+            <HBox spacing="20" alignment="CENTER_LEFT">
+                <Label text="Legend:" style="-fx-font-weight: bold; -fx-font-size: 11px;"/>
+                <Label text="ADDED" style="-fx-text-fill: #27ae60; -fx-font-size: 11px; -fx-font-weight: bold;"/>
+                <Label text="REMOVED" style="-fx-text-fill: #e74c3c; -fx-font-size: 11px; -fx-font-weight: bold;"/>
+                <Label text="MODIFIED" style="-fx-text-fill: #f39c12; -fx-font-size: 11px; -fx-font-weight: bold;"/>
+            </HBox>
+        </VBox>
+    </SplitPane>
+</VBox>

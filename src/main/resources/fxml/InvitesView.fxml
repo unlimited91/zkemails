@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="me.toymail.zkemails.gui.controller.InvitesController"
+      spacing="15">
+    <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+
+    <HBox alignment="CENTER_LEFT" spacing="10">
+        <Label text="Invites" styleClass="section-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+    </HBox>
+
+    <!-- Send Invite Section -->
+    <HBox alignment="CENTER_LEFT" spacing="10">
+        <Label text="Send Invite to:"/>
+        <TextField fx:id="inviteEmailField" promptText="recipient@email.com" prefWidth="250"/>
+        <Button text="Send Invite" onAction="#sendInvite" styleClass="button-primary"/>
+    </HBox>
+
+    <Separator/>
+
+    <!-- Pending Incoming Invites -->
+    <VBox spacing="10" VBox.vgrow="ALWAYS">
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="Pending Incoming Invites" style="-fx-font-weight: bold;"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Refresh" onAction="#fetchFromImap" styleClass="button-primary"/>
+            <Button text="Acknowledge Selected" onAction="#acknowledgeSelected" styleClass="button-success"/>
+        </HBox>
+
+        <TableView fx:id="pendingTable" prefHeight="200">
+            <columnResizePolicy>
+                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+            </columnResizePolicy>
+            <columns>
+                <TableColumn fx:id="pendingIdColumn" text="Invite ID" prefWidth="150"/>
+                <TableColumn fx:id="pendingEmailColumn" text="From" prefWidth="200"/>
+                <TableColumn fx:id="pendingSubjectColumn" text="Subject" prefWidth="200"/>
+                <TableColumn fx:id="pendingDateColumn" text="Date" prefWidth="130"/>
+                <TableColumn fx:id="pendingStatusColumn" text="Status" prefWidth="80"/>
+            </columns>
+            <placeholder>
+                <Label text="Click 'Refresh' to check for invites"/>
+            </placeholder>
+        </TableView>
+
+        <Label text="Click 'Refresh' to sync invites from your mailbox. Select a pending invite and click 'Acknowledge' to accept."
+               style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
+    </VBox>
+
+    <Separator/>
+
+    <!-- Outgoing Invites -->
+    <VBox spacing="10" VBox.vgrow="ALWAYS">
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="Outgoing Invites (Sent by You)" style="-fx-font-weight: bold;"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Sync Accept Messages" onAction="#syncAcceptMessages"/>
+        </HBox>
+
+        <TableView fx:id="outgoingTable" prefHeight="200">
+            <columnResizePolicy>
+                <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+            </columnResizePolicy>
+            <columns>
+                <TableColumn fx:id="outgoingEmailColumn" text="To" prefWidth="200"/>
+                <TableColumn fx:id="outgoingSubjectColumn" text="Subject" prefWidth="200"/>
+                <TableColumn fx:id="outgoingDateColumn" text="Date" prefWidth="130"/>
+                <TableColumn fx:id="outgoingStatusColumn" text="Status" prefWidth="100"/>
+            </columns>
+            <placeholder>
+                <Label text="No outgoing invites"/>
+            </placeholder>
+        </TableView>
+
+        <Label text="Click 'Sync Accept Messages' to import keys from contacts who accepted your invites."
+               style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
+    </VBox>
+</VBox>

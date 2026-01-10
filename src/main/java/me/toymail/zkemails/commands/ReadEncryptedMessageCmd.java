@@ -258,6 +258,7 @@ public class ReadEncryptedMessageCmd implements Runnable {
         // Get threading info
         String originalMessageId = imap.getMessageId(replyTo);
         String originalReferences = imap.getReferences(replyTo);
+        String threadId = imap.getZkeThreadId(replyTo);
 
         // Build new References header: original References + original Message-ID
         String newReferences = originalReferences != null ? originalReferences + " " : "";
@@ -298,7 +299,8 @@ public class ReadEncryptedMessageCmd implements Runnable {
                     contact.fingerprintHex,
                     contact.x25519PublicB64,
                     originalMessageId,
-                    newReferences
+                    newReferences,
+                    threadId
             );
         }
 
