@@ -1,6 +1,8 @@
 package me.toymail.zkemails;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.mail.*;
+import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.search.AndTerm;
 import jakarta.mail.search.ComparisonTerm;
 import jakarta.mail.search.FlagTerm;
@@ -8,9 +10,11 @@ import jakarta.mail.search.HeaderTerm;
 import jakarta.mail.search.ReceivedDateTerm;
 import jakarta.mail.search.SearchTerm;
 import jakarta.mail.search.SubjectTerm;
+import me.toymail.zkemails.crypto.CryptoBox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.*;
 
 public final class ImapClient implements AutoCloseable {
@@ -480,5 +484,84 @@ public final class ImapClient implements AutoCloseable {
             }
         }
         return ids;
+    }
+
+    /**
+     * Check if a message has encrypted attachments.
+     * @return number of attachments, or 0 if none
+     */
+    public int getAttachmentCount(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) return 0;
+        String[] countHeader = m.getHeader("X-ZKEmails-Has-Attachments");
+        if (countHeader == null || countHeader.length == 0) return 0;
+        try {
+            return Integer.parseInt(countHeader[0]);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Check if a message has attachments.
+     */
+    public boolean hasAttachments(long uid) throws MessagingException {
+        return getAttachmentCount(uid) > 0;
+    }
+
+    /**
+     * Container for encrypted attachments parsed from email.
+     */
+    public record AttachmentContainer(int version, List<CryptoBox.EncryptedAttachment> attachments) {}
+
+    /**
+     * Fetch and parse the encrypted attachment container from a message.
+     * Returns null if no attachments or parsing fails.
+     */
+    public AttachmentContainer fetchAttachmentContainer(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) {
+            log.warn("fetchAttachmentContainer: message not found for UID {}", uid);
+            return null;
+        }
+
+        // Check if message has attachments
+        if (!hasAttachments(uid)) {
+            return null;
+        }
+
+        try {
+            Object content = m.getContent();
+            if (!(content instanceof MimeMultipart multipart)) {
+                log.warn("Message {} has attachments header but content is not multipart", uid);
+                return null;
+            }
+
+            // Look for the attachments.zke part
+            for (int i = 0; i < multipart.getCount(); i++) {
+                BodyPart part = multipart.getBodyPart(i);
+                String filename = part.getFileName();
+                if ("attachments.zke".equals(filename)) {
+                    // Parse JSON content
+                    Object partContent = part.getContent();
+                    String json;
+                    if (partContent instanceof String) {
+                        json = (String) partContent;
+                    } else if (partContent instanceof java.io.InputStream is) {
+                        json = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    } else {
+                        log.warn("Unexpected attachment part content type: {}", partContent.getClass());
+                        continue;
+                    }
+
+                    ObjectMapper mapper = new ObjectMapper();
+                    return mapper.readValue(json, AttachmentContainer.class);
+                }
+            }
+            log.warn("Message {} has attachments header but no attachments.zke part found", uid);
+            return null;
+        } catch (IOException e) {
+            throw new MessagingException("Failed to parse attachment container", e);
+        }
     }
 }

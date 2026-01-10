@@ -23,6 +23,7 @@ import java.io.IOException;
 public class ZkeGuiApplication extends Application {
     private static ServiceContext serviceContext;
     private static MessageCacheService cacheService;
+    private MainController mainController;
 
     // Set macOS dock icon early, before JavaFX initializes
     static {
@@ -104,6 +105,9 @@ public class ZkeGuiApplication extends Application {
 
         // Cleanup on close
         primaryStage.setOnCloseRequest(e -> {
+            if (mainController != null) {
+                mainController.shutdown();
+            }
             if (cacheService != null) {
                 cacheService.shutdown();
             }
@@ -118,7 +122,12 @@ public class ZkeGuiApplication extends Application {
         try {
             // Try to find a constructor that takes ServiceContext
             try {
-                return type.getConstructor(ServiceContext.class).newInstance(serviceContext);
+                Object controller = type.getConstructor(ServiceContext.class).newInstance(serviceContext);
+                // Store MainController reference for shutdown
+                if (controller instanceof MainController mc) {
+                    mainController = mc;
+                }
+                return controller;
             } catch (NoSuchMethodException e) {
                 // Fall back to default constructor
                 return type.getConstructor().newInstance();

@@ -1,13 +1,19 @@
 package me.toymail.zkemails.gui.controller;
 
 import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.stage.FileChooser;
+import javafx.stage.Window;
 import me.toymail.zkemails.gui.util.TaskRunner;
 import me.toymail.zkemails.service.ContactService;
 import me.toymail.zkemails.service.MessageService;
 import me.toymail.zkemails.service.ServiceContext;
 
+import java.io.File;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -22,6 +28,10 @@ public class ComposeController {
     @FXML private TextArea bodyArea;
     @FXML private Button sendButton;
     @FXML private Label statusLabel;
+    @FXML private ListView<AttachmentItem> attachmentList;
+    @FXML private Label attachmentCountLabel;
+
+    private final ObservableList<AttachmentItem> attachments = FXCollections.observableArrayList();
 
     public ComposeController(ServiceContext services, MainController mainController) {
         this.services = services;
@@ -31,6 +41,47 @@ public class ComposeController {
     @FXML
     public void initialize() {
         loadContacts();
+        setupAttachmentList();
+    }
+
+    private void setupAttachmentList() {
+        attachmentList.setItems(attachments);
+        attachmentList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(AttachmentItem item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    setText(item.filename() + " (" + formatSize(item.size()) + ")");
+                    // Context menu for removing
+                    ContextMenu menu = new ContextMenu();
+                    MenuItem removeItem = new MenuItem("Remove");
+                    removeItem.setOnAction(e -> {
+                        attachments.remove(item);
+                        updateAttachmentCount();
+                    });
+                    menu.getItems().add(removeItem);
+                    setContextMenu(menu);
+                }
+            }
+        });
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        return String.format("%.1f MB", bytes / 1024.0 / 1024.0);
+    }
+
+    private void updateAttachmentCount() {
+        if (attachments.isEmpty()) {
+            attachmentCountLabel.setText("");
+        } else {
+            long totalSize = attachments.stream().mapToLong(AttachmentItem::size).sum();
+            attachmentCountLabel.setText(attachments.size() + " file(s), " + formatSize(totalSize));
+        }
     }
 
     private void loadContacts() {
@@ -53,6 +104,35 @@ public class ComposeController {
                     statusLabel.setText("Error loading contacts: " + error.getMessage());
                 }
             });
+    }
+
+    @FXML
+    public void addAttachments() {
+        Window window = attachmentList.getScene().getWindow();
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Select Files to Attach");
+        List<File> files = chooser.showOpenMultipleDialog(window);
+
+        if (files != null) {
+            for (File file : files) {
+                // Check size limit (25MB)
+                if (file.length() > MessageService.MAX_ATTACHMENT_SIZE) {
+                    mainController.showError("File Too Large",
+                            file.getName() + " exceeds 25MB limit (" + formatSize(file.length()) + ")");
+                    continue;
+                }
+
+                // Check for duplicates
+                boolean duplicate = attachments.stream()
+                        .anyMatch(a -> a.path().equals(file.toPath()));
+                if (duplicate) {
+                    continue;
+                }
+
+                attachments.add(new AttachmentItem(file.getName(), file.toPath(), file.length()));
+            }
+            updateAttachmentCount();
+        }
     }
 
     @FXML
@@ -80,9 +160,19 @@ public class ComposeController {
 
         sendButton.setDisable(true);
         mainController.showProgress(true);
-        mainController.setStatus("Sending message...");
 
-        TaskRunner.run("Sending message", () -> services.messages().sendMessage(password, recipient, subject, body),
+        List<Path> attachmentPaths = attachments.stream()
+                .map(AttachmentItem::path)
+                .toList();
+
+        String statusMsg = attachmentPaths.isEmpty()
+                ? "Sending message..."
+                : "Sending message with " + attachmentPaths.size() + " attachment(s)...";
+        mainController.setStatus(statusMsg);
+
+        TaskRunner.run("Sending message",
+            () -> services.messages().sendMessageWithAttachments(password, recipient, subject, body,
+                    attachmentPaths, null, null, null),
             new TaskRunner.TaskCallback<>() {
                 @Override
                 public void onSuccess(MessageService.SendResult result) {
@@ -113,6 +203,13 @@ public class ComposeController {
         recipientCombo.setValue(null);
         subjectField.clear();
         bodyArea.clear();
+        attachments.clear();
+        updateAttachmentCount();
         statusLabel.setText("Form cleared.");
     }
+
+    /**
+     * Attachment item for the ListView.
+     */
+    public record AttachmentItem(String filename, Path path, long size) {}
 }

@@ -13,6 +13,7 @@ import me.toymail.zkemails.store.StoreContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
 
@@ -36,7 +37,24 @@ public final class MessageService {
         String subject,
         Date received,
         String plaintext,
-        boolean decryptionSuccessful
+        boolean decryptionSuccessful,
+        List<AttachmentInfo> attachments
+    ) {
+        public DecryptedMessage(long uid, String from, String subject, Date received,
+                               String plaintext, boolean decryptionSuccessful) {
+            this(uid, from, subject, received, plaintext, decryptionSuccessful, List.of());
+        }
+    }
+
+    /**
+     * Attachment info for GUI display.
+     */
+    public record AttachmentInfo(
+        String filename,
+        String contentType,
+        long size,
+        boolean availableLocally,
+        Path localPath
     ) {}
 
     /**
@@ -192,23 +210,29 @@ public final class MessageService {
         // Merge and convert to DecryptedMessage
         List<DecryptedMessage> all = new ArrayList<>();
         for (var m : inboxMsgs) {
+            List<AttachmentInfo> attachments = convertInboxAttachments(threadId, m.uid, m.attachments);
             all.add(new DecryptedMessage(
                 m.uid,
                 m.from,
                 m.subject,
                 new Date(m.receivedEpochSec * 1000),
                 m.plaintext,
-                true
+                true,
+                attachments
             ));
         }
         for (var m : sentMsgs) {
+            // Use the sent message's own threadId for attachment paths
+            String sentThreadId = m.threadId != null ? m.threadId : threadId;
+            List<AttachmentInfo> attachments = convertSentAttachments(sentThreadId, m.id, m.attachments);
             all.add(new DecryptedMessage(
                 -1,  // No UID for local sent messages
                 currentUserEmail,
                 m.subject,
                 new Date(m.sentAtEpochSec * 1000),
                 m.plaintext,
-                true
+                true,
+                attachments
             ));
         }
 
@@ -571,6 +595,131 @@ public final class MessageService {
     }
 
     /**
+     * Maximum attachment size: 25MB
+     */
+    public static final long MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+
+    /**
+     * Send an encrypted message with attachments.
+     * @param password the app password
+     * @param toEmail the recipient email
+     * @param subject the message subject
+     * @param body the message body
+     * @param attachmentPaths list of file paths to attach
+     * @param inReplyTo the Message-ID being replied to (for threading)
+     * @param references the References header (for threading)
+     * @param threadId the custom thread ID (null to generate a new one)
+     * @return send result
+     */
+    public SendResult sendMessageWithAttachments(String password, String toEmail, String subject, String body,
+                                                  List<Path> attachmentPaths,
+                                                  String inReplyTo, String references, String threadId) throws Exception {
+        if (!context.hasActiveProfile()) {
+            return new SendResult(false, "No active profile set");
+        }
+
+        Config cfg = context.zkStore().readJson("config.json", Config.class);
+        IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
+
+        if (cfg == null) {
+            return new SendResult(false, "Not initialized. Run: zke init --email <your-email>");
+        }
+        if (myKeys == null) {
+            return new SendResult(false, "Missing keys.json. Re-run init.");
+        }
+
+        if (toEmail == null || toEmail.isBlank()) {
+            return new SendResult(false, "Recipient is required");
+        }
+        if (subject == null || subject.isBlank()) {
+            return new SendResult(false, "Subject is required");
+        }
+        if (body == null || body.isBlank()) {
+            return new SendResult(false, "Cannot send empty message");
+        }
+
+        ContactsStore.Contact c = context.contacts().get(toEmail);
+        if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
+            return new SendResult(false, "No pinned X25519 key for contact: " + toEmail +
+                    ". Run: zke sync-ack (or ack invi if they invited you).");
+        }
+
+        // Build attachment inputs
+        List<CryptoBox.AttachmentInput> attachments = new ArrayList<>();
+        if (attachmentPaths != null) {
+            for (Path path : attachmentPaths) {
+                try {
+                    CryptoBox.AttachmentInput att = CryptoBox.AttachmentInput.fromFile(path);
+                    if (att.data().length > MAX_ATTACHMENT_SIZE) {
+                        return new SendResult(false, "Attachment too large: " + path.getFileName() +
+                                " (" + (att.data().length / 1024 / 1024) + "MB > 25MB limit)");
+                    }
+                    attachments.add(att);
+                } catch (Exception e) {
+                    return new SendResult(false, "Failed to read attachment: " + path + " - " + e.getMessage());
+                }
+            }
+        }
+
+        // Generate thread ID for new messages
+        String effectiveThreadId = threadId;
+        if (effectiveThreadId == null || effectiveThreadId.isBlank()) {
+            effectiveThreadId = UUID.randomUUID().toString();
+        }
+
+        String messageId;
+        try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(
+                cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
+            if (attachments.isEmpty()) {
+                messageId = smtp.sendEncryptedMessage(cfg.email, toEmail, subject, body, myKeys,
+                        c.fingerprintHex, c.x25519PublicB64, inReplyTo, references, effectiveThreadId);
+            } else {
+                messageId = smtp.sendEncryptedMessageWithAttachments(cfg.email, toEmail, subject, body,
+                        attachments, myKeys, c.fingerprintHex, c.x25519PublicB64, inReplyTo, references, effectiveThreadId);
+            }
+        }
+
+        // Save sent message locally
+        try {
+            String msgLocalId = UUID.randomUUID().toString();
+            SentStore.SentMessage sentMsg = new SentStore.SentMessage(
+                    msgLocalId,
+                    messageId,
+                    toEmail,
+                    subject,
+                    body,
+                    inReplyTo,
+                    references,
+                    effectiveThreadId,
+                    Instant.now().getEpochSecond()
+            );
+
+            // Save attachment metadata and files locally
+            if (!attachments.isEmpty()) {
+                List<SentStore.AttachmentMeta> attachmentMetas = new ArrayList<>();
+                for (var att : attachments) {
+                    String localPath = context.sentStore().saveAttachment(effectiveThreadId, msgLocalId,
+                            att.filename(), att.data());
+                    attachmentMetas.add(new SentStore.AttachmentMeta(
+                            att.filename(),
+                            att.contentType(),
+                            att.data().length,
+                            localPath
+                    ));
+                }
+                sentMsg.attachments = attachmentMetas;
+            }
+
+            context.sentStore().save(sentMsg);
+        } catch (Exception e) {
+            log.warn("Sent message but failed to save locally: {}", e.getMessage());
+        }
+
+        String attachmentInfo = attachments.isEmpty() ? "" : " with " + attachments.size() + " attachment(s)";
+        return new SendResult(true, "Encrypted message sent to " + toEmail + attachmentInfo);
+    }
+
+    /**
      * Reply to a message.
      * @param password the app password
      * @param originalMessageUid the UID of the message to reply to
@@ -829,5 +978,53 @@ public final class MessageService {
     private static String first(Map<String, List<String>> map, String key) {
         List<String> v = map.get(key);
         return (v != null && !v.isEmpty()) ? v.get(0) : null;
+    }
+
+    /**
+     * Convert inbox attachment metadata to AttachmentInfo for GUI.
+     */
+    private List<AttachmentInfo> convertInboxAttachments(String threadId, long uid,
+                                                          List<InboxStore.AttachmentMeta> metas) {
+        if (metas == null || metas.isEmpty()) {
+            return List.of();
+        }
+
+        List<AttachmentInfo> result = new ArrayList<>();
+        for (var meta : metas) {
+            Path fullPath = context.inboxStore().getAttachmentFullPath(threadId, uid, meta.localPath);
+            boolean exists = context.inboxStore().attachmentExists(threadId, uid, meta.localPath);
+            result.add(new AttachmentInfo(
+                    meta.filename,
+                    meta.contentType,
+                    meta.size,
+                    exists,
+                    fullPath
+            ));
+        }
+        return result;
+    }
+
+    /**
+     * Convert sent attachment metadata to AttachmentInfo for GUI.
+     */
+    private List<AttachmentInfo> convertSentAttachments(String threadId, String id,
+                                                         List<SentStore.AttachmentMeta> metas) {
+        if (metas == null || metas.isEmpty()) {
+            return List.of();
+        }
+
+        List<AttachmentInfo> result = new ArrayList<>();
+        for (var meta : metas) {
+            Path fullPath = context.sentStore().getAttachmentFullPath(threadId, id, meta.localPath);
+            boolean exists = context.sentStore().attachmentExists(threadId, id, meta.localPath);
+            result.add(new AttachmentInfo(
+                    meta.filename,
+                    meta.contentType,
+                    meta.size,
+                    exists,
+                    fullPath
+            ));
+        }
+        return result;
     }
 }

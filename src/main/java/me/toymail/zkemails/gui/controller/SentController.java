@@ -312,6 +312,28 @@ public class SentController {
         body.getStyleClass().add("chat-bubble-body");
         bubble.getChildren().add(body);
 
+        // Attachments
+        if (msg.attachments != null && !msg.attachments.isEmpty()) {
+            VBox attachmentBox = new VBox(4);
+            attachmentBox.getStyleClass().add("chat-attachments");
+            for (var att : msg.attachments) {
+                java.nio.file.Path fullPath = services.storeContext().sentStore()
+                        .getAttachmentFullPath(msg.threadId, msg.id, att.localPath);
+                boolean exists = java.nio.file.Files.exists(fullPath);
+
+                Hyperlink link = new Hyperlink(getAttachmentIcon(att.contentType) + " " + att.filename);
+                link.getStyleClass().add("attachment-link");
+                if (exists) {
+                    link.setOnAction(e -> openFile(fullPath));
+                } else {
+                    link.setDisable(true);
+                    link.setText(link.getText() + " (unavailable)");
+                }
+                attachmentBox.getChildren().add(link);
+            }
+            bubble.getChildren().add(attachmentBox);
+        }
+
         // Timestamp
         Label time = new Label(DATE_FORMAT.format(sentDate));
         time.getStyleClass().add("chat-bubble-time");
@@ -327,6 +349,42 @@ public class SentController {
         row.getChildren().addAll(spacer, bubble);
 
         return row;
+    }
+
+    /**
+     * Get icon for attachment based on content type.
+     */
+    private String getAttachmentIcon(String contentType) {
+        if (contentType == null) return "\uD83D\uDCCE"; // 📎
+        if (contentType.startsWith("image/")) return "\uD83D\uDDBC"; // 🖼
+        if (contentType.startsWith("video/")) return "\uD83C\uDFA5"; // 🎥
+        if (contentType.startsWith("audio/")) return "\uD83C\uDFB5"; // 🎵
+        if (contentType.contains("pdf")) return "\uD83D\uDCC4"; // 📄
+        if (contentType.contains("zip") || contentType.contains("archive")) return "\uD83D\uDCE6"; // 📦
+        return "\uD83D\uDCCE"; // 📎
+    }
+
+    /**
+     * Open a file with the system's default application.
+     */
+    private void openFile(java.nio.file.Path path) {
+        try {
+            if (java.awt.Desktop.isDesktopSupported()) {
+                java.awt.Desktop.getDesktop().open(path.toFile());
+            } else {
+                // Fallback for systems without Desktop support
+                String os = System.getProperty("os.name").toLowerCase();
+                if (os.contains("mac")) {
+                    Runtime.getRuntime().exec(new String[]{"open", path.toString()});
+                } else if (os.contains("linux")) {
+                    Runtime.getRuntime().exec(new String[]{"xdg-open", path.toString()});
+                } else if (os.contains("win")) {
+                    Runtime.getRuntime().exec(new String[]{"cmd", "/c", "start", "", path.toString()});
+                }
+            }
+        } catch (Exception e) {
+            mainController.showError("Cannot open file", e.getMessage());
+        }
     }
 
     /**

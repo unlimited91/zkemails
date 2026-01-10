@@ -332,6 +332,32 @@ public class MessageCacheService {
     }
 
     /**
+     * Send a message with attachments and refresh cache.
+     */
+    public CompletableFuture<MessageService.SendResult> sendMessageWithAttachments(
+            String toEmail, String subject, String body,
+            java.util.List<java.nio.file.Path> attachmentPaths,
+            String inReplyTo, String references, String threadId) {
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                var result = services.messages().sendMessageWithAttachments(
+                    currentPassword, toEmail, subject, body, attachmentPaths,
+                    inReplyTo, references, threadId);
+
+                // Refresh cache after sending
+                if (result.success()) {
+                    refreshAsync();
+                }
+
+                return result;
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
+        }, fetchExecutor);
+    }
+
+    /**
      * Check if cache has data.
      */
     public boolean hasCachedData() {

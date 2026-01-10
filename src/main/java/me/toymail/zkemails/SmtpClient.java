@@ -1,12 +1,16 @@
 package me.toymail.zkemails;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.mail.*;
 import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -235,6 +239,98 @@ public final class SmtpClient implements AutoCloseable {
                                      String recipientFpHex, String recipientXPubB64) throws Exception {
         return sendEncryptedMessage(fromEmail, toEmail, subject, plaintext, senderKeys, recipientFpHex, recipientXPubB64, null, null, null);
     }
+
+    /**
+     * Send an encrypted message with attachments.
+     * Uses MIME multipart format to include encrypted attachments.
+     *
+     * @param attachments List of files to attach (will be encrypted)
+     * @return the Message-ID of the sent message
+     */
+    public String sendEncryptedMessageWithAttachments(
+            String fromEmail, String toEmail, String subject, String plaintext,
+            List<CryptoBox.AttachmentInput> attachments,
+            IdentityKeys.KeyBundle senderKeys,
+            String recipientFpHex, String recipientXPubB64,
+            String inReplyTo, String references, String threadId) throws Exception {
+
+        // Encrypt message and attachments together
+        CryptoBox.EncryptedMessageWithAttachments encrypted = CryptoBox.encryptWithAttachments(
+                fromEmail, toEmail, subject, plaintext, attachments,
+                senderKeys, recipientFpHex, recipientXPubB64
+        );
+
+        CryptoBox.EncryptedPayload p = encrypted.textPayload();
+
+        MimeMessage msg = new MimeMessage(session);
+        msg.setFrom(new InternetAddress(fromEmail));
+        msg.setRecipients(Message.RecipientType.TO, InternetAddress.parse(toEmail, false));
+        msg.setSubject(subject, "UTF-8");
+        msg.setSentDate(new Date());
+
+        // Create multipart content
+        MimeMultipart multipart = new MimeMultipart("mixed");
+
+        // Part 1: Text body
+        MimeBodyPart textPart = new MimeBodyPart();
+        textPart.setText("Encrypted message with attachments (zke).", "UTF-8");
+        multipart.addBodyPart(textPart);
+
+        // Part 2: Encrypted attachments as JSON
+        if (encrypted.attachments() != null && !encrypted.attachments().isEmpty()) {
+            MimeBodyPart attachmentPart = new MimeBodyPart();
+            ObjectMapper mapper = new ObjectMapper();
+
+            // Create attachment container with version for future compatibility
+            var container = new AttachmentContainer(1, encrypted.attachments());
+            String json = mapper.writeValueAsString(container);
+
+            // Use DataHandler for proper MIME encoding
+            attachmentPart.setDataHandler(new jakarta.activation.DataHandler(
+                    json, "application/json; charset=UTF-8"));
+            attachmentPart.setFileName("attachments.zke");
+            attachmentPart.setDisposition(MimeBodyPart.ATTACHMENT);
+            multipart.addBodyPart(attachmentPart);
+        }
+
+        msg.setContent(multipart);
+
+        // Threading headers
+        if (inReplyTo != null && !inReplyTo.isBlank()) {
+            msg.setHeader("In-Reply-To", inReplyTo);
+        }
+        if (references != null && !references.isBlank()) {
+            msg.setHeader("References", references);
+        }
+        if (threadId != null && !threadId.isBlank()) {
+            msg.setHeader("X-ZKEmails-Thread-Id", threadId);
+        }
+
+        // ZKE encryption headers
+        msg.setHeader("X-ZKEmails-Type", "msg");
+        msg.setHeader("X-ZKEmails-Enc", "x25519+hkdf+aesgcm;sig=ed25519");
+        msg.setHeader("X-ZKEmails-Has-Attachments", String.valueOf(encrypted.attachments().size()));
+
+        msg.setHeader("X-ZKEmails-Sender-Fp", senderKeys.fingerprintHex());
+        msg.setHeader("X-ZKEmails-Recipient-Fp", recipientFpHex);
+
+        msg.setHeader("X-ZKEmails-Ephem-X25519", p.ephemX25519PubB64());
+        msg.setHeader("X-ZKEmails-WrappedKey", p.wrappedKeyB64());
+        msg.setHeader("X-ZKEmails-WrappedKey-Nonce", p.wrappedKeyNonceB64());
+        msg.setHeader("X-ZKEmails-Nonce", p.msgNonceB64());
+        msg.setHeader("X-ZKEmails-Ciphertext", p.ciphertextB64());
+        msg.setHeader("X-ZKEmails-Sig", p.sigB64());
+
+        // Save changes to ensure multipart boundaries are set in headers
+        msg.saveChanges();
+        Transport.send(msg);
+        return msg.getMessageID();
+    }
+
+    /**
+     * Container for encrypted attachments in JSON format.
+     */
+    public record AttachmentContainer(int version, List<CryptoBox.EncryptedAttachment> attachments) {}
 
     public void sendPlain(String fromEmail, String toEmail, String subject, String body,
                           Map<String, String> headers) throws MessagingException {

@@ -31,6 +31,13 @@
     <TextArea fx:id="bodyArea" VBox.vgrow="ALWAYS" promptText="Type your message here..."
               wrapText="true"/>
 
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <Label text="Attachments:" styleClass="form-label"/>
+        <Button text="Add Files" onAction="#addAttachments"/>
+        <Label fx:id="attachmentCountLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+    </HBox>
+    <ListView fx:id="attachmentList" prefHeight="80" maxHeight="120"/>
+
     <HBox spacing="10" alignment="CENTER_RIGHT">
         <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
         <Region HBox.hgrow="ALWAYS"/>

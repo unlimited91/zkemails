@@ -99,6 +99,13 @@ public class InboxStore {
         public String localPath;            // Relative path within attachments/
 
         public AttachmentMeta() {}
+
+        public AttachmentMeta(String filename, String contentType, long size, String localPath) {
+            this.filename = filename;
+            this.contentType = contentType;
+            this.size = size;
+            this.localPath = localPath;
+        }
     }
 
     private final Path inboxPath;
@@ -377,6 +384,104 @@ public class InboxStore {
 
     public Path getAttachmentsPath(String threadId, long uid) {
         return getMessagePath(threadId, uid).resolve("attachments");
+    }
+
+    // ===== Attachment operations =====
+
+    /**
+     * Save an attachment to disk.
+     * @return the relative path within the attachments folder (stored in AttachmentMeta.localPath)
+     */
+    public synchronized String saveAttachment(String threadId, long uid, String filename, byte[] data) throws IOException {
+        Path attachDir = getAttachmentsPath(threadId, uid);
+        Files.createDirectories(attachDir);
+
+        // Sanitize filename and handle collisions
+        String safeName = sanitizeFilename(filename);
+        Path targetPath = resolveUniqueFilename(attachDir, safeName);
+
+        Files.write(targetPath, data, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        log.debug("Saved attachment: {}", targetPath);
+
+        // Return the filename as stored (may include collision suffix)
+        return targetPath.getFileName().toString();
+    }
+
+    /**
+     * Get the full path to an attachment.
+     */
+    public Path getAttachmentFullPath(String threadId, long uid, String localPath) {
+        return getAttachmentsPath(threadId, uid).resolve(localPath);
+    }
+
+    /**
+     * Read an attachment from disk.
+     */
+    public byte[] readAttachment(String threadId, long uid, String localPath) throws IOException {
+        Path path = getAttachmentFullPath(threadId, uid, localPath);
+        if (!Files.exists(path)) {
+            throw new IOException("Attachment not found: " + path);
+        }
+        return Files.readAllBytes(path);
+    }
+
+    /**
+     * Check if an attachment exists on disk.
+     */
+    public boolean attachmentExists(String threadId, long uid, String localPath) {
+        Path path = getAttachmentFullPath(threadId, uid, localPath);
+        return Files.exists(path);
+    }
+
+    /**
+     * Sanitize filename to remove unsafe characters.
+     */
+    private String sanitizeFilename(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "attachment";
+        }
+        // Replace unsafe characters with underscore
+        String safe = filename.replaceAll("[<>:\"/\\\\|?*\\x00-\\x1f]", "_");
+        // Remove leading/trailing dots and spaces
+        safe = safe.replaceAll("^[.\\s]+|[.\\s]+$", "");
+        // Limit length
+        if (safe.length() > 200) {
+            int extIdx = safe.lastIndexOf('.');
+            if (extIdx > 0 && safe.length() - extIdx < 20) {
+                String ext = safe.substring(extIdx);
+                safe = safe.substring(0, 200 - ext.length()) + ext;
+            } else {
+                safe = safe.substring(0, 200);
+            }
+        }
+        return safe.isEmpty() ? "attachment" : safe;
+    }
+
+    /**
+     * Resolve unique filename by appending (1), (2), etc. if collision.
+     */
+    private Path resolveUniqueFilename(Path dir, String filename) {
+        Path target = dir.resolve(filename);
+        if (!Files.exists(target)) {
+            return target;
+        }
+
+        // Extract base and extension
+        int dotIdx = filename.lastIndexOf('.');
+        String base = dotIdx > 0 ? filename.substring(0, dotIdx) : filename;
+        String ext = dotIdx > 0 ? filename.substring(dotIdx) : "";
+
+        int counter = 1;
+        while (Files.exists(target)) {
+            target = dir.resolve(base + "(" + counter + ")" + ext);
+            counter++;
+            if (counter > 1000) {
+                // Safety limit
+                target = dir.resolve(base + "_" + System.currentTimeMillis() + ext);
+                break;
+            }
+        }
+        return target;
     }
 
     // ===== Private helpers =====

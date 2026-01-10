@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.*;
+import java.io.IOException;
 
 /**
  * Service for syncing inbox messages from IMAP to local storage.
@@ -94,14 +95,6 @@ public class InboxSyncService {
                         continue;
                     }
 
-                    // Decrypt the message
-                    String plaintext = decryptMessage(imap, msgSummary, cfg, myKeys);
-                    if (plaintext == null) {
-                        log.warn("Failed to decrypt message UID {}", uid);
-                        failedCount++;
-                        continue;
-                    }
-
                     // Get thread ID from header (never generate random IDs)
                     String threadId = imap.getZkeThreadId(uid);
                     if (threadId == null || threadId.isEmpty()) {
@@ -111,19 +104,49 @@ public class InboxSyncService {
                         threadId = baseSubject + ":" + (sender != null ? sender : "unknown");
                     }
 
-                    // Create and save inbox message
+                    // Create inbox message
                     InboxStore.InboxMessage inboxMsg = new InboxStore.InboxMessage();
                     inboxMsg.uid = uid;
                     inboxMsg.messageId = imap.getMessageId(uid);
                     inboxMsg.from = msgSummary.from();
                     inboxMsg.to = cfg.email;
                     inboxMsg.subject = msgSummary.subject();
-                    inboxMsg.plaintext = plaintext;
                     inboxMsg.threadId = threadId;
                     inboxMsg.receivedEpochSec = msgSummary.received() != null
                             ? msgSummary.received().getTime() / 1000
                             : Instant.now().getEpochSecond();
                     inboxMsg.syncedEpochSec = Instant.now().getEpochSecond();
+
+                    // Check if message has attachments - need different decryption path
+                    boolean hasAttachments = imap.hasAttachments(uid);
+                    log.info("Processing UID {} - hasAttachments: {}", uid, hasAttachments);
+
+                    if (hasAttachments) {
+                        // Decrypt with attachments (signature includes attachment hash)
+                        try {
+                            DecryptResult result = decryptMessageWithAttachments(imap, uid, msgSummary, threadId, cfg, myKeys);
+                            if (result == null) {
+                                log.warn("Failed to decrypt message with attachments UID {}", uid);
+                                failedCount++;
+                                continue;
+                            }
+                            inboxMsg.plaintext = result.plaintext;
+                            inboxMsg.attachments = result.attachments;
+                        } catch (Exception e) {
+                            log.warn("Failed to decrypt message with attachments UID {}: {}", uid, e.getMessage());
+                            failedCount++;
+                            continue;
+                        }
+                    } else {
+                        // Decrypt without attachments
+                        String plaintext = decryptMessage(imap, msgSummary, cfg, myKeys);
+                        if (plaintext == null) {
+                            log.warn("Failed to decrypt message UID {}", uid);
+                            failedCount++;
+                            continue;
+                        }
+                        inboxMsg.plaintext = plaintext;
+                    }
 
                     context.inboxStore().saveMessage(inboxMsg);
                     syncedUids.add(uid);
@@ -252,5 +275,81 @@ public class InboxSyncService {
     private static String normalizeSubject(String subject) {
         if (subject == null) return "";
         return subject.replaceAll("(?i)^(Re:|Fwd:|Fw:)\\s*", "").trim();
+    }
+
+    /**
+     * Result of decrypting a message (with optional attachments).
+     */
+    private record DecryptResult(String plaintext, List<InboxStore.AttachmentMeta> attachments) {}
+
+    /**
+     * Decrypt a message that has attachments.
+     * Uses decryptWithAttachments which properly verifies signature including attachment hash.
+     */
+    private DecryptResult decryptMessageWithAttachments(ImapClient imap, long uid, ImapClient.MailSummary msgSummary,
+                                                         String threadId, Config cfg, IdentityKeys.KeyBundle myKeys) throws Exception {
+        // Fetch attachment container
+        ImapClient.AttachmentContainer container = imap.fetchAttachmentContainer(uid);
+        if (container == null || container.attachments() == null) {
+            log.warn("Message {} has attachments header but no attachments found", uid);
+            return null;
+        }
+
+        log.debug("Decrypting message with {} attachments for UID {}", container.attachments().size(), uid);
+
+        // Get encryption headers
+        Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(uid);
+        String ephemX25519PubB64 = first(hdrs, "X-ZKEmails-Ephem-X25519");
+        String wrappedKeyB64 = first(hdrs, "X-ZKEmails-WrappedKey");
+        String wrappedKeyNonceB64 = first(hdrs, "X-ZKEmails-WrappedKey-Nonce");
+        String msgNonceB64 = first(hdrs, "X-ZKEmails-Nonce");
+        String ciphertextB64 = first(hdrs, "X-ZKEmails-Ciphertext");
+        String sigB64 = first(hdrs, "X-ZKEmails-Sig");
+        String recipientFpHex = first(hdrs, "X-ZKEmails-Recipient-Fp");
+
+        String fromEmail = extractEmail(msgSummary.from());
+        ContactsStore.Contact contact = context.contacts().get(fromEmail);
+        if (contact == null || contact.ed25519PublicB64 == null) {
+            log.debug("No contact found for sender: {}", fromEmail);
+            return null;
+        }
+
+        CryptoBox.EncryptedPayload payload = new CryptoBox.EncryptedPayload(
+                ephemX25519PubB64, wrappedKeyB64, wrappedKeyNonceB64,
+                msgNonceB64, ciphertextB64, sigB64, recipientFpHex
+        );
+
+        // Decrypt with attachments (this verifies signature including attachment hash)
+        CryptoBox.DecryptedMessageWithAttachments result = CryptoBox.decryptWithAttachments(
+                fromEmail,
+                cfg.email,
+                msgSummary.subject(),
+                payload,
+                container.attachments(),
+                myKeys.x25519PrivateB64(),
+                contact.ed25519PublicB64
+        );
+
+        // Save each decrypted attachment to disk
+        List<InboxStore.AttachmentMeta> metas = new ArrayList<>();
+        if (result.attachments() != null) {
+            for (var decryptedAtt : result.attachments()) {
+                try {
+                    String localPath = context.inboxStore().saveAttachment(threadId, uid,
+                            decryptedAtt.filename(), decryptedAtt.data());
+                    metas.add(new InboxStore.AttachmentMeta(
+                            decryptedAtt.filename(),
+                            decryptedAtt.contentType(),
+                            decryptedAtt.originalSize(),
+                            localPath
+                    ));
+                    log.debug("Saved attachment: {} ({} bytes)", decryptedAtt.filename(), decryptedAtt.data().length);
+                } catch (IOException e) {
+                    log.warn("Failed to save attachment {}: {}", decryptedAtt.filename(), e.getMessage());
+                }
+            }
+        }
+
+        return new DecryptResult(result.plaintext(), metas.isEmpty() ? null : metas);
     }
 }

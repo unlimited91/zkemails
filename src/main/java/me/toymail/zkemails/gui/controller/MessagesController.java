@@ -18,6 +18,10 @@ import me.toymail.zkemails.service.MessageService;
 import me.toymail.zkemails.service.ServiceContext;
 import me.toymail.zkemails.store.InboxStore;
 
+import java.awt.Desktop;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -62,6 +66,12 @@ public class MessagesController {
     // Reply section
     @FXML private VBox replySection;
     @FXML private TextArea replyTextArea;
+    @FXML private HBox attachmentBar;
+    @FXML private Label attachmentListLabel;
+
+    // Reply attachments
+    private final java.util.List<java.nio.file.Path> replyAttachments = new java.util.ArrayList<>();
+    private static final long MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024; // 25 MB
 
     // Loading overlay
     @FXML private VBox loadingOverlay;
@@ -515,6 +525,24 @@ public class MessagesController {
         body.getStyleClass().add("chat-bubble-body");
         bubble.getChildren().add(body);
 
+        // Attachments (if any)
+        if (msg.attachments() != null && !msg.attachments().isEmpty()) {
+            VBox attachmentBox = new VBox(4);
+            attachmentBox.getStyleClass().add("chat-attachments");
+            for (var att : msg.attachments()) {
+                Hyperlink link = new Hyperlink(getAttachmentIcon(att.contentType()) + " " + att.filename());
+                link.getStyleClass().add("attachment-link");
+                if (att.availableLocally() && att.localPath() != null) {
+                    link.setOnAction(e -> openFile(att.localPath()));
+                } else {
+                    link.setDisable(true);
+                    link.setText(link.getText() + " (unavailable)");
+                }
+                attachmentBox.getChildren().add(link);
+            }
+            bubble.getChildren().add(attachmentBox);
+        }
+
         // Timestamp
         Label time = new Label(msg.received() != null ? DATE_FORMAT.format(msg.received()) : "");
         time.getStyleClass().add("chat-bubble-time");
@@ -537,6 +565,51 @@ public class MessagesController {
         }
 
         return row;
+    }
+
+    /**
+     * Get an icon for the attachment based on content type.
+     */
+    private String getAttachmentIcon(String contentType) {
+        if (contentType == null) return "\uD83D\uDCCE"; // 📎
+        if (contentType.startsWith("image/")) return "\uD83D\uDDBC"; // 🖼
+        if (contentType.startsWith("video/")) return "\uD83C\uDFA5"; // 🎥
+        if (contentType.startsWith("audio/")) return "\uD83C\uDFB5"; // 🎵
+        if (contentType.contains("pdf")) return "\uD83D\uDCC4"; // 📄
+        if (contentType.contains("zip") || contentType.contains("rar") || contentType.contains("tar")) return "\uD83D\uDCE6"; // 📦
+        return "\uD83D\uDCCE"; // 📎
+    }
+
+    /**
+     * Open a file using the system's default application.
+     */
+    private void openFile(Path path) {
+        if (path == null) return;
+        File file = path.toFile();
+        if (!file.exists()) {
+            mainController.showError("File Not Found", "The attachment file was not found: " + path.getFileName());
+            return;
+        }
+
+        try {
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(file);
+            } else {
+                // Fallback for systems without Desktop support
+                String os = System.getProperty("os.name").toLowerCase();
+                ProcessBuilder pb;
+                if (os.contains("mac")) {
+                    pb = new ProcessBuilder("open", file.getAbsolutePath());
+                } else if (os.contains("win")) {
+                    pb = new ProcessBuilder("cmd", "/c", "start", "", file.getAbsolutePath());
+                } else {
+                    pb = new ProcessBuilder("xdg-open", file.getAbsolutePath());
+                }
+                pb.start();
+            }
+        } catch (IOException e) {
+            mainController.showError("Cannot Open File", "Failed to open: " + e.getMessage());
+        }
     }
 
     /**
@@ -606,6 +679,60 @@ public class MessagesController {
 
     private void clearReplyTextArea() {
         replyTextArea.clear();
+        clearReplyAttachmentsInternal();
+    }
+
+    /**
+     * Add attachment to reply (called from Attach button).
+     */
+    @FXML
+    public void addReplyAttachment() {
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle("Select Files to Attach");
+        java.util.List<java.io.File> files = chooser.showOpenMultipleDialog(
+                replyTextArea.getScene().getWindow());
+
+        if (files != null && !files.isEmpty()) {
+            for (java.io.File file : files) {
+                if (file.length() > MAX_ATTACHMENT_SIZE) {
+                    mainController.showError("File too large",
+                            file.getName() + " exceeds 25MB limit.");
+                    continue;
+                }
+                java.nio.file.Path path = file.toPath();
+                if (!replyAttachments.contains(path)) {
+                    replyAttachments.add(path);
+                }
+            }
+            updateAttachmentBar();
+        }
+    }
+
+    /**
+     * Clear all reply attachments (called from Clear button).
+     */
+    @FXML
+    public void clearReplyAttachments() {
+        clearReplyAttachmentsInternal();
+    }
+
+    private void clearReplyAttachmentsInternal() {
+        replyAttachments.clear();
+        updateAttachmentBar();
+    }
+
+    private void updateAttachmentBar() {
+        if (replyAttachments.isEmpty()) {
+            attachmentBar.setVisible(false);
+            attachmentBar.setManaged(false);
+        } else {
+            attachmentBar.setVisible(true);
+            attachmentBar.setManaged(true);
+            String names = replyAttachments.stream()
+                    .map(p -> p.getFileName().toString())
+                    .collect(java.util.stream.Collectors.joining(", "));
+            attachmentListLabel.setText(names + " (" + replyAttachments.size() + ")");
+        }
     }
 
     @FXML
@@ -667,15 +794,26 @@ public class MessagesController {
     }
 
     private void doSendReply(MessageService.ReplyContext context, String body) {
+        // Capture attachments before clearing
+        java.util.List<java.nio.file.Path> attachments = new java.util.ArrayList<>(replyAttachments);
+        boolean hasAttachments = !attachments.isEmpty();
+
         // Immediately add the sent message to the chat view (optimistic UI)
-        addSentMessageBubble(body);
+        addSentMessageBubble(body, attachments);
         clearReplyTextArea();
         mainController.setStatus("Sending...");
 
         if (cacheService != null) {
-            cacheService.sendMessage(context.toEmail(), context.subject(), body,
-                    context.originalMessageId(), context.references(), context.threadId())
-                .thenAccept(result -> Platform.runLater(() -> {
+            CompletableFuture<MessageService.SendResult> sendFuture;
+            if (hasAttachments) {
+                sendFuture = cacheService.sendMessageWithAttachments(
+                        context.toEmail(), context.subject(), body, attachments,
+                        context.originalMessageId(), context.references(), context.threadId());
+            } else {
+                sendFuture = cacheService.sendMessage(context.toEmail(), context.subject(), body,
+                        context.originalMessageId(), context.references(), context.threadId());
+            }
+            sendFuture.thenAccept(result -> Platform.runLater(() -> {
                     if (result.success()) {
                         mainController.setStatus("Reply sent!");
                     } else {
@@ -694,8 +832,14 @@ public class MessagesController {
 
             CompletableFuture.supplyAsync(() -> {
                 try {
-                    return services.messages().sendMessage(password, context.toEmail(), context.subject(), body,
-                            context.originalMessageId(), context.references(), context.threadId());
+                    if (hasAttachments) {
+                        return services.messages().sendMessageWithAttachments(password, context.toEmail(),
+                                context.subject(), body, attachments,
+                                context.originalMessageId(), context.references(), context.threadId());
+                    } else {
+                        return services.messages().sendMessage(password, context.toEmail(), context.subject(), body,
+                                context.originalMessageId(), context.references(), context.threadId());
+                    }
                 } catch (Exception e) {
                     throw new CompletionException(e);
                 }
@@ -717,7 +861,24 @@ public class MessagesController {
     /**
      * Add a sent message bubble to the chat view immediately.
      */
-    private void addSentMessageBubble(String body) {
+    private void addSentMessageBubble(String body, java.util.List<java.nio.file.Path> attachmentPaths) {
+        // Convert paths to AttachmentInfo for display
+        java.util.List<MessageService.AttachmentInfo> attachments = new java.util.ArrayList<>();
+        if (attachmentPaths != null) {
+            for (java.nio.file.Path p : attachmentPaths) {
+                try {
+                    String contentType = java.nio.file.Files.probeContentType(p);
+                    attachments.add(new MessageService.AttachmentInfo(
+                            p.getFileName().toString(),
+                            contentType != null ? contentType : "application/octet-stream",
+                            java.nio.file.Files.size(p),
+                            true,
+                            p
+                    ));
+                } catch (java.io.IOException ignored) {}
+            }
+        }
+
         // Create a sent message bubble
         MessageService.DecryptedMessage sentMsg = new MessageService.DecryptedMessage(
             -1,
@@ -725,7 +886,8 @@ public class MessagesController {
             null,
             new java.util.Date(),
             body,
-            true
+            true,
+            attachments
         );
         HBox bubble = createMessageBubble(sentMsg);
         messageContent.getChildren().add(bubble);

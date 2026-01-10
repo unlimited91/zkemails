@@ -79,6 +79,7 @@ public final class SentStore {
         public String references;      // For threading
         public String threadId;        // Custom ZKE thread ID
         public long sentAtEpochSec;
+        public List<AttachmentMeta> attachments;  // Attachment metadata
 
         public SentMessage() {}
 
@@ -93,6 +94,22 @@ public final class SentStore {
             this.references = references;
             this.threadId = threadId;
             this.sentAtEpochSec = sentAtEpochSec;
+        }
+    }
+
+    public static final class AttachmentMeta {
+        public String filename;
+        public String contentType;
+        public long size;
+        public String localPath;
+
+        public AttachmentMeta() {}
+
+        public AttachmentMeta(String filename, String contentType, long size, String localPath) {
+            this.filename = filename;
+            this.contentType = contentType;
+            this.size = size;
+            this.localPath = localPath;
         }
     }
 
@@ -480,6 +497,94 @@ public final class SentStore {
      */
     public synchronized List<SentMessage> listAll() {
         return list(0);
+    }
+
+    // ===== Attachment operations =====
+
+    /**
+     * Get the path to a message's attachments folder.
+     */
+    public Path getAttachmentsPath(String threadId, String id) {
+        return outboxPath.resolve(threadId).resolve(id).resolve("attachments");
+    }
+
+    /**
+     * Save an attachment to disk.
+     * @return the relative path within the attachments folder (stored in AttachmentMeta.localPath)
+     */
+    public synchronized String saveAttachment(String threadId, String id, String filename, byte[] data) throws IOException {
+        Path attachDir = getAttachmentsPath(threadId, id);
+        Files.createDirectories(attachDir);
+
+        // Sanitize filename and handle collisions
+        String safeName = sanitizeFilename(filename);
+        Path targetPath = resolveUniqueFilename(attachDir, safeName);
+
+        Files.write(targetPath, data, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        log.debug("Saved sent attachment: {}", targetPath);
+
+        return targetPath.getFileName().toString();
+    }
+
+    /**
+     * Get the full path to an attachment.
+     */
+    public Path getAttachmentFullPath(String threadId, String id, String localPath) {
+        return getAttachmentsPath(threadId, id).resolve(localPath);
+    }
+
+    /**
+     * Check if an attachment exists on disk.
+     */
+    public boolean attachmentExists(String threadId, String id, String localPath) {
+        Path path = getAttachmentFullPath(threadId, id, localPath);
+        return Files.exists(path);
+    }
+
+    /**
+     * Sanitize filename to remove unsafe characters.
+     */
+    private String sanitizeFilename(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "attachment";
+        }
+        String safe = filename.replaceAll("[<>:\"/\\\\|?*\\x00-\\x1f]", "_");
+        safe = safe.replaceAll("^[.\\s]+|[.\\s]+$", "");
+        if (safe.length() > 200) {
+            int extIdx = safe.lastIndexOf('.');
+            if (extIdx > 0 && safe.length() - extIdx < 20) {
+                String ext = safe.substring(extIdx);
+                safe = safe.substring(0, 200 - ext.length()) + ext;
+            } else {
+                safe = safe.substring(0, 200);
+            }
+        }
+        return safe.isEmpty() ? "attachment" : safe;
+    }
+
+    /**
+     * Resolve unique filename by appending (1), (2), etc. if collision.
+     */
+    private Path resolveUniqueFilename(Path dir, String filename) {
+        Path target = dir.resolve(filename);
+        if (!Files.exists(target)) {
+            return target;
+        }
+
+        int dotIdx = filename.lastIndexOf('.');
+        String base = dotIdx > 0 ? filename.substring(0, dotIdx) : filename;
+        String ext = dotIdx > 0 ? filename.substring(dotIdx) : "";
+
+        int counter = 1;
+        while (Files.exists(target)) {
+            target = dir.resolve(base + "(" + counter + ")" + ext);
+            counter++;
+            if (counter > 1000) {
+                target = dir.resolve(base + "_" + System.currentTimeMillis() + ext);
+                break;
+            }
+        }
+        return target;
     }
 
     // ===== Private helpers =====

@@ -68,9 +68,15 @@
             <!-- Reply Section (always visible when thread is shown) -->
             <VBox fx:id="replySection" styleClass="reply-section" visible="false" managed="false" spacing="5">
                 <Separator/>
-                <HBox spacing="10" alignment="CENTER_LEFT">
+                <!-- Attachment list (hidden when empty) -->
+                <HBox fx:id="attachmentBar" spacing="5" alignment="CENTER_LEFT" visible="false" managed="false">
+                    <Label fx:id="attachmentListLabel" styleClass="attachment-list-text"/>
+                    <Button text="x" onAction="#clearReplyAttachments" styleClass="attachment-clear-btn" prefWidth="20" prefHeight="20"/>
+                </HBox>
+                <HBox spacing="8" alignment="CENTER">
                     <TextArea fx:id="replyTextArea" promptText="Type your reply..." prefRowCount="2" wrapText="true" HBox.hgrow="ALWAYS"/>
-                    <Button text="Send" onAction="#sendInlineReply" styleClass="button-success" prefWidth="80" prefHeight="50"/>
+                    <Button text="+" onAction="#addReplyAttachment" styleClass="reply-icon-btn" prefWidth="36" prefHeight="36"/>
+                    <Button text="▶" onAction="#sendInlineReply" styleClass="reply-send-btn" prefWidth="36" prefHeight="36"/>
                 </HBox>
             </VBox>
         </VBox>

@@ -8,6 +8,7 @@ import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import me.toymail.zkemails.gui.ProfileConfigWatcher;
 import me.toymail.zkemails.gui.ZkeGuiApplication;
 import me.toymail.zkemails.gui.cache.MessageCacheService;
 import me.toymail.zkemails.gui.util.TaskRunner;
@@ -25,6 +26,7 @@ import java.util.List;
 public class MainController {
     private final ServiceContext services;
     private MessageCacheService cacheService;
+    private ProfileConfigWatcher profileWatcher;
 
     @FXML private BorderPane rootPane;
     @FXML private VBox sidebar;
@@ -63,6 +65,18 @@ public class MainController {
 
         // Set up profile selector listener
         profileSelector.setOnAction(e -> onProfileChanged());
+
+        // Start profile config watcher to detect CLI profile changes
+        profileWatcher = new ProfileConfigWatcher(this::onExternalProfileChange);
+        try {
+            String currentProfile = services.profiles().getActiveProfile();
+            if (currentProfile != null) {
+                profileWatcher.setCurrentProfile(currentProfile);
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        profileWatcher.start();
 
         // Default to messages view and start cache
         Platform.runLater(() -> {
@@ -150,6 +164,11 @@ public class MainController {
                 statusLabel.setText("Switched to profile: " + selected);
                 currentPassword = null; // Clear cached password
                 cacheServiceStarted = false;
+
+                // Update profile watcher to avoid triggering on our own change
+                if (profileWatcher != null) {
+                    profileWatcher.setCurrentProfile(selected);
+                }
 
                 // Get password for new profile - try silent first, then prompt if needed
                 String password = getPasswordSilent();
@@ -424,5 +443,64 @@ public class MainController {
      */
     public MessageCacheService getCacheService() {
         return cacheService;
+    }
+
+    /**
+     * Handle external profile change (from CLI).
+     * Called on JavaFX thread when profile.config is modified externally.
+     */
+    private void onExternalProfileChange(String newProfile) {
+        // Update the selector to reflect the new profile
+        if (profileSelector.getItems().contains(newProfile)) {
+            // Temporarily remove listener to avoid recursive triggers
+            profileSelector.setOnAction(null);
+            profileSelector.setValue(newProfile);
+            profileSelector.setOnAction(e -> onProfileChanged());
+        }
+
+        // Update watcher to track this as current
+        profileWatcher.setCurrentProfile(newProfile);
+
+        // Show notification
+        setStatus("Profile changed externally to: " + newProfile);
+        showInfo("Profile Changed",
+            "The default profile was changed to '" + newProfile + "' by CLI.\n" +
+            "The GUI has been updated to reflect this change.");
+
+        // Update the StoreContext to use the new profile's stores
+        try {
+            services.storeContext().switchProfile(newProfile);
+        } catch (Exception e) {
+            setStatus("Error switching profile stores: " + e.getMessage());
+            return;
+        }
+
+        // Clear cached password and restart cache service
+        currentPassword = null;
+        cacheServiceStarted = false;
+
+        String password = getPasswordSilent();
+        if (password == null) {
+            password = getPassword();
+        }
+
+        if (password != null && cacheService != null) {
+            cacheService.onProfileSwitch(newProfile, password);
+            cacheServiceStarted = true;
+        }
+
+        // Refresh current view
+        if (currentNavButton == messagesButton) {
+            switchToMessages();
+        }
+    }
+
+    /**
+     * Shutdown resources. Called when application closes.
+     */
+    public void shutdown() {
+        if (profileWatcher != null) {
+            profileWatcher.stop();
+        }
     }
 }
