@@ -192,6 +192,79 @@ public final class InviteService {
     }
 
     /**
+     * Fetch invites directly from IMAP server.
+     * Searches for emails with X-ZKEmails-Type=invite header.
+     * @param password the app password
+     * @param limit maximum invites to fetch
+     * @return list of invite summaries from IMAP
+     */
+    public List<ImapInvite> fetchInvitesFromImap(String password, int limit) throws Exception {
+        if (!context.hasActiveProfile()) {
+            throw new IllegalStateException("No active profile set");
+        }
+
+        Config cfg = context.zkStore().readJson("config.json", Config.class);
+        if (cfg == null) {
+            throw new IllegalStateException("Not initialized");
+        }
+
+        List<ImapInvite> invites = new java.util.ArrayList<>();
+        try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
+                cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
+        ))) {
+            List<ImapClient.MailSummary> matches = imap.searchHeaderEquals("X-ZKEmails-Type", "invite", limit);
+            for (var m : matches) {
+                Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(m.uid());
+                String inviteId = first(hdrs, "X-ZKEmails-Invite-Id");
+                String fingerprint = first(hdrs, "X-ZKEmails-Fingerprint");
+                String fromEmail = extractEmail(m.from());
+
+                if (inviteId != null && fromEmail != null) {
+                    // Store in invites.json for persistence (ensureIncoming handles deduplication)
+                    context.invites().ensureIncoming(inviteId, fromEmail, cfg.email, m.subject());
+
+                    // Check if this invite is already acknowledged locally
+                    boolean alreadyAcked = isInviteAcknowledged(inviteId);
+                    invites.add(new ImapInvite(
+                        inviteId,
+                        fromEmail,
+                        m.subject(),
+                        m.received() != null ? m.received().getTime() / 1000 : 0,
+                        fingerprint,
+                        alreadyAcked
+                    ));
+                }
+            }
+        }
+
+        return invites;
+    }
+
+    /**
+     * Check if an invite is already acknowledged locally.
+     */
+    private boolean isInviteAcknowledged(String inviteId) {
+        try {
+            var invite = context.invites().getIncoming(inviteId);
+            return invite != null && "acked".equals(invite.status);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Record for invites fetched directly from IMAP.
+     */
+    public record ImapInvite(
+        String inviteId,
+        String fromEmail,
+        String subject,
+        long receivedEpochSec,
+        String fingerprint,
+        boolean alreadyAcked
+    ) {}
+
+    /**
      * List pending (unacknowledged) invites.
      * @return list of pending invite summaries
      */

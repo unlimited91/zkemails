@@ -220,6 +220,14 @@ public class MainController {
         loadView("/fxml/ContactsView.fxml");
     }
 
+    /**
+     * Switch to contact version history view.
+     */
+    public void switchToContactVersions() {
+        setActiveNavButton(contactsButton);  // Keep contacts highlighted
+        loadView("/fxml/ContactsVersionsView.fxml");
+    }
+
     @FXML
     public void switchToInvites() {
         setActiveNavButton(invitesButton);

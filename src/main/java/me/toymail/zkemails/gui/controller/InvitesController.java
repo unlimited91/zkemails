@@ -29,6 +29,7 @@ public class InvitesController {
     @FXML private TableColumn<InviteRow, String> pendingEmailColumn;
     @FXML private TableColumn<InviteRow, String> pendingSubjectColumn;
     @FXML private TableColumn<InviteRow, String> pendingDateColumn;
+    @FXML private TableColumn<InviteRow, String> pendingStatusColumn;
 
     @FXML private TableView<InviteRow> outgoingTable;
     @FXML private TableColumn<InviteRow, String> outgoingEmailColumn;
@@ -54,6 +55,27 @@ public class InvitesController {
         pendingEmailColumn.setCellValueFactory(new PropertyValueFactory<>("email"));
         pendingSubjectColumn.setCellValueFactory(new PropertyValueFactory<>("subject"));
         pendingDateColumn.setCellValueFactory(new PropertyValueFactory<>("dateString"));
+        pendingStatusColumn.setCellValueFactory(new PropertyValueFactory<>("status"));
+
+        // Color-code status column
+        pendingStatusColumn.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(String status, boolean empty) {
+                super.updateItem(status, empty);
+                if (empty || status == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    setText(status);
+                    if ("acked".equalsIgnoreCase(status)) {
+                        setStyle("-fx-text-fill: #27ae60; -fx-font-weight: bold;");
+                    } else {
+                        setStyle("-fx-text-fill: #f39c12;");
+                    }
+                }
+            }
+        });
+
         pendingTable.setItems(pendingInvites);
 
         // Outgoing invites table
@@ -110,10 +132,53 @@ public class InvitesController {
     }
 
     @FXML
+    public void fetchFromImap() {
+        String password = mainController.getPassword();
+        if (password == null) return;
+
+        mainController.showProgress(true);
+        mainController.setStatus("Fetching invites from IMAP...");
+
+        TaskRunner.run("Fetching invites from IMAP", () -> services.invites().fetchInvitesFromImap(password, 100),
+            new TaskRunner.TaskCallback<>() {
+                @Override
+                public void onSuccess(List<InviteService.ImapInvite> result) {
+                    mainController.showProgress(false);
+                    pendingInvites.clear();
+                    int pendingCount = 0;
+                    for (var i : result) {
+                        pendingInvites.add(new InviteRow(i));
+                        if (!i.alreadyAcked()) pendingCount++;
+                    }
+                    statusLabel.setText("Found " + result.size() + " invites (" + pendingCount + " pending)");
+                    if (result.isEmpty()) {
+                        mainController.showInfo("No Invites Found",
+                            "No invite emails found in your inbox.\n" +
+                            "Make sure someone has sent you an invite.");
+                    }
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    mainController.showProgress(false);
+                    mainController.showError("Fetch Error", error.getMessage());
+                    statusLabel.setText("Error fetching invites");
+                }
+            });
+    }
+
+    @FXML
     public void acknowledgeSelected() {
         InviteRow selected = pendingTable.getSelectionModel().getSelectedItem();
         if (selected == null) {
             mainController.showError("No Selection", "Please select an invite to acknowledge");
+            return;
+        }
+
+        if ("acked".equalsIgnoreCase(selected.getStatus())) {
+            mainController.showInfo("Already Acknowledged",
+                "This invite has already been acknowledged.\n" +
+                "You have already exchanged keys with " + selected.getEmail());
             return;
         }
 
@@ -131,7 +196,8 @@ public class InvitesController {
                     if (result.success()) {
                         mainController.setStatus("Invite acknowledged!");
                         mainController.showInfo("Success", result.message());
-                        refresh();
+                        // Update the status in the table
+                        selected.statusProperty().set("acked");
                     } else {
                         mainController.setStatus("Failed to acknowledge");
                         mainController.showError("Acknowledgement Failed", result.message());
@@ -235,6 +301,21 @@ public class InvitesController {
             String dateStr = "";
             if (summary.createdEpochSec() > 0) {
                 dateStr = Instant.ofEpochSecond(summary.createdEpochSec())
+                    .atZone(ZoneId.systemDefault())
+                    .format(DATE_FORMAT);
+            }
+            this.dateString = new SimpleStringProperty(dateStr);
+        }
+
+        public InviteRow(InviteService.ImapInvite invite) {
+            this.inviteId = new SimpleStringProperty(invite.inviteId());
+            this.email = new SimpleStringProperty(invite.fromEmail());
+            this.subject = new SimpleStringProperty(invite.subject() != null ? invite.subject() : "(no subject)");
+            this.status = new SimpleStringProperty(invite.alreadyAcked() ? "acked" : "pending");
+
+            String dateStr = "";
+            if (invite.receivedEpochSec() > 0) {
+                dateStr = Instant.ofEpochSecond(invite.receivedEpochSec())
                     .atZone(ZoneId.systemDefault())
                     .format(DATE_FORMAT);
             }

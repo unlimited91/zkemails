@@ -46,6 +46,7 @@ import picocli.CommandLine.Command;
                 ReadEncryptedMessageCmd.class,
                 SyncAckCmd.class,
                 CredentialCmd.class,
+                ContactVersionsCmd.class,
                 GuiCmd.class
         }
 )

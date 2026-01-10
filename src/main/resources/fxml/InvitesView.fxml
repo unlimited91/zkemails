@@ -12,7 +12,6 @@
     <HBox alignment="CENTER_LEFT" spacing="10">
         <Label text="Invites" styleClass="section-title"/>
         <Region HBox.hgrow="ALWAYS"/>
-        <Button text="Refresh" onAction="#refresh"/>
         <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
     </HBox>
 
@@ -30,6 +29,7 @@
         <HBox alignment="CENTER_LEFT" spacing="10">
             <Label text="Pending Incoming Invites" style="-fx-font-weight: bold;"/>
             <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Refresh" onAction="#fetchFromImap" styleClass="button-primary"/>
             <Button text="Acknowledge Selected" onAction="#acknowledgeSelected" styleClass="button-success"/>
         </HBox>
 
@@ -42,13 +42,14 @@
                 <TableColumn fx:id="pendingEmailColumn" text="From" prefWidth="200"/>
                 <TableColumn fx:id="pendingSubjectColumn" text="Subject" prefWidth="200"/>
                 <TableColumn fx:id="pendingDateColumn" text="Date" prefWidth="130"/>
+                <TableColumn fx:id="pendingStatusColumn" text="Status" prefWidth="80"/>
             </columns>
             <placeholder>
-                <Label text="No pending invites"/>
+                <Label text="Click 'Refresh' to check for invites"/>
             </placeholder>
         </TableView>
 
-        <Label text="Select an invite and click 'Acknowledge' to accept and exchange keys."
+        <Label text="Click 'Refresh' to sync invites from your mailbox. Select a pending invite and click 'Acknowledge' to accept."
                style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
     </VBox>
 

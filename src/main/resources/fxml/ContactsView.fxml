@@ -26,6 +26,7 @@
     <HBox spacing="10" alignment="CENTER_LEFT">
         <Button text="Refresh" onAction="#refresh"/>
         <Button text="Sync Accept Messages" onAction="#syncAcceptMessages" styleClass="button-success"/>
+        <Button text="Version History" onAction="#showVersionHistory"/>
         <Region HBox.hgrow="ALWAYS"/>
         <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
     </HBox>

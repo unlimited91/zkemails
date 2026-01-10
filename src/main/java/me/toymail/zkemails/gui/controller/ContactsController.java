@@ -152,6 +152,11 @@ public class ContactsController {
             });
     }
 
+    @FXML
+    public void showVersionHistory() {
+        mainController.switchToContactVersions();
+    }
+
     /**
      * Table row model for contacts.
      */
