@@ -45,7 +45,7 @@ readonly JAR_NAME="zkemails.jar"
 readonly MIN_JAVA_VERSION=17
 
 # Version to install (can be overridden via -v flag)
-ZKEMAILS_VERSION="1.0.0.beta1"
+ZKEMAILS_VERSION="1.0.0.beta2"
 
 # =============================================================================
 # OUTPUT FORMATTING

@@ -45,7 +45,9 @@
                 <HBox alignment="CENTER_LEFT" spacing="10">
                     <VBox HBox.hgrow="ALWAYS" spacing="2">
                         <Label fx:id="messageSubject" styleClass="message-subject"/>
-                        <Label fx:id="messageTo" styleClass="message-from"/>
+                        <Label fx:id="messageTo" styleClass="message-to"/>
+                        <Label fx:id="messageCc" styleClass="message-cc" visible="false" managed="false"/>
+                        <Label fx:id="messageBcc" styleClass="message-bcc" visible="false" managed="false"/>
                         <Label fx:id="messageDate" styleClass="message-date"/>
                     </VBox>
                     <Label styleClass="encrypted-badge" text="Encrypted"/>

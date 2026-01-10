@@ -3,7 +3,10 @@ package me.toymail.zkemails.gui.controller;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
+import javafx.scene.Node;
 import javafx.scene.control.*;
+import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.HBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
 import me.toymail.zkemails.gui.util.TaskRunner;
@@ -18,12 +21,29 @@ import java.util.List;
 
 /**
  * Controller for the compose message view.
+ * Supports single and multi-recipient sending with To/CC/BCC.
  */
 public class ComposeController {
     private final ServiceContext services;
     private final MainController mainController;
 
-    @FXML private ComboBox<String> recipientCombo;
+    // To field
+    @FXML private ComboBox<String> toCombo;
+    @FXML private FlowPane toChips;
+
+    // CC field (hidden by default)
+    @FXML private Label ccLabel;
+    @FXML private HBox ccRow;
+    @FXML private ComboBox<String> ccCombo;
+    @FXML private FlowPane ccChips;
+
+    // BCC field (hidden by default)
+    @FXML private Label bccLabel;
+    @FXML private HBox bccRow;
+    @FXML private ComboBox<String> bccCombo;
+    @FXML private FlowPane bccChips;
+
+    @FXML private Button ccBccToggle;
     @FXML private TextField subjectField;
     @FXML private TextArea bodyArea;
     @FXML private Button sendButton;
@@ -31,7 +51,14 @@ public class ComposeController {
     @FXML private ListView<AttachmentItem> attachmentList;
     @FXML private Label attachmentCountLabel;
 
+    // Recipient lists
+    private final ObservableList<String> toRecipients = FXCollections.observableArrayList();
+    private final ObservableList<String> ccRecipients = FXCollections.observableArrayList();
+    private final ObservableList<String> bccRecipients = FXCollections.observableArrayList();
+
     private final ObservableList<AttachmentItem> attachments = FXCollections.observableArrayList();
+    private List<String> availableContacts = new ArrayList<>();
+    private boolean ccBccVisible = false;
 
     public ComposeController(ServiceContext services, MainController mainController) {
         this.services = services;
@@ -42,6 +69,11 @@ public class ComposeController {
     public void initialize() {
         loadContacts();
         setupAttachmentList();
+
+        // Add listeners to update chips when lists change
+        toRecipients.addListener((javafx.collections.ListChangeListener<String>) c -> updateChips(toChips, toRecipients));
+        ccRecipients.addListener((javafx.collections.ListChangeListener<String>) c -> updateChips(ccChips, ccRecipients));
+        bccRecipients.addListener((javafx.collections.ListChangeListener<String>) c -> updateChips(bccChips, bccRecipients));
     }
 
     private void setupAttachmentList() {
@@ -55,7 +87,6 @@ public class ComposeController {
                     setGraphic(null);
                 } else {
                     setText(item.filename() + " (" + formatSize(item.size()) + ")");
-                    // Context menu for removing
                     ContextMenu menu = new ContextMenu();
                     MenuItem removeItem = new MenuItem("Remove");
                     removeItem.setOnAction(e -> {
@@ -89,13 +120,19 @@ public class ComposeController {
             new TaskRunner.TaskCallback<>() {
                 @Override
                 public void onSuccess(List<ContactService.ContactInfo> contacts) {
-                    recipientCombo.setItems(FXCollections.observableArrayList(
-                        contacts.stream().map(ContactService.ContactInfo::email).toList()
-                    ));
+                    availableContacts = contacts.stream()
+                            .map(ContactService.ContactInfo::email)
+                            .toList();
+
+                    ObservableList<String> items = FXCollections.observableArrayList(availableContacts);
+                    toCombo.setItems(items);
+                    ccCombo.setItems(FXCollections.observableArrayList(availableContacts));
+                    bccCombo.setItems(FXCollections.observableArrayList(availableContacts));
+
                     if (contacts.isEmpty()) {
                         statusLabel.setText("No contacts ready for encrypted messaging. Send invites first!");
                     } else {
-                        statusLabel.setText("Select a recipient and compose your message.");
+                        statusLabel.setText("Select recipients and compose your message.");
                     }
                 }
 
@@ -107,6 +144,87 @@ public class ComposeController {
     }
 
     @FXML
+    public void toggleCcBcc() {
+        ccBccVisible = !ccBccVisible;
+
+        ccLabel.setVisible(ccBccVisible);
+        ccLabel.setManaged(ccBccVisible);
+        ccRow.setVisible(ccBccVisible);
+        ccRow.setManaged(ccBccVisible);
+
+        bccLabel.setVisible(ccBccVisible);
+        bccLabel.setManaged(ccBccVisible);
+        bccRow.setVisible(ccBccVisible);
+        bccRow.setManaged(ccBccVisible);
+
+        ccBccToggle.setText(ccBccVisible ? "Hide CC/BCC" : "CC/BCC");
+    }
+
+    @FXML
+    public void addToRecipient() {
+        addRecipient(toCombo, toRecipients);
+    }
+
+    @FXML
+    public void addCcRecipient() {
+        addRecipient(ccCombo, ccRecipients);
+    }
+
+    @FXML
+    public void addBccRecipient() {
+        addRecipient(bccCombo, bccRecipients);
+    }
+
+    private void addRecipient(ComboBox<String> combo, ObservableList<String> list) {
+        String email = combo.getValue();
+        if (email == null || email.isBlank()) {
+            return;
+        }
+
+        final String normalizedEmail = email.trim().toLowerCase();
+
+        // Check if already added in any list
+        if (toRecipients.contains(normalizedEmail) || ccRecipients.contains(normalizedEmail) || bccRecipients.contains(normalizedEmail)) {
+            mainController.showError("Duplicate", normalizedEmail + " is already added");
+            return;
+        }
+
+        // Check if contact exists with keys
+        boolean contactReady = availableContacts.stream()
+                .anyMatch(c -> c.equalsIgnoreCase(normalizedEmail));
+
+        if (!contactReady) {
+            mainController.showError("Contact Not Ready",
+                normalizedEmail + " is not a contact with exchanged keys.\nSend an invite first.");
+            return;
+        }
+
+        list.add(normalizedEmail);
+        combo.setValue(null);
+    }
+
+    private void updateChips(FlowPane pane, ObservableList<String> recipients) {
+        pane.getChildren().clear();
+        for (String email : recipients) {
+            Label chip = createChip(email, recipients);
+            pane.getChildren().add(chip);
+        }
+    }
+
+    private Label createChip(String email, ObservableList<String> list) {
+        // Show just the username part for brevity
+        String display = email.contains("@") ? email.substring(0, email.indexOf("@")) : email;
+
+        Label chip = new Label(display + " x");
+        chip.getStyleClass().add("recipient-chip");
+        chip.setTooltip(new Tooltip(email + "\nClick to remove"));
+
+        chip.setOnMouseClicked(e -> list.remove(email));
+
+        return chip;
+    }
+
+    @FXML
     public void addAttachments() {
         Window window = attachmentList.getScene().getWindow();
         FileChooser chooser = new FileChooser();
@@ -115,19 +233,15 @@ public class ComposeController {
 
         if (files != null) {
             for (File file : files) {
-                // Check size limit (25MB)
                 if (file.length() > MessageService.MAX_ATTACHMENT_SIZE) {
                     mainController.showError("File Too Large",
                             file.getName() + " exceeds 25MB limit (" + formatSize(file.length()) + ")");
                     continue;
                 }
 
-                // Check for duplicates
                 boolean duplicate = attachments.stream()
                         .anyMatch(a -> a.path().equals(file.toPath()));
-                if (duplicate) {
-                    continue;
-                }
+                if (duplicate) continue;
 
                 attachments.add(new AttachmentItem(file.getName(), file.toPath(), file.length()));
             }
@@ -137,13 +251,12 @@ public class ComposeController {
 
     @FXML
     public void send() {
-        String recipient = recipientCombo.getValue();
         String subject = subjectField.getText();
         String body = bodyArea.getText();
 
         // Validation
-        if (recipient == null || recipient.isBlank()) {
-            mainController.showError("Validation Error", "Please select a recipient");
+        if (toRecipients.isEmpty()) {
+            mainController.showError("Validation Error", "Please add at least one To recipient");
             return;
         }
         if (subject == null || subject.isBlank()) {
@@ -161,46 +274,99 @@ public class ComposeController {
         sendButton.setDisable(true);
         mainController.showProgress(true);
 
+        int totalRecipients = toRecipients.size() + ccRecipients.size() + bccRecipients.size();
+        boolean isMultiRecipient = totalRecipients > 1 || !ccRecipients.isEmpty() || !bccRecipients.isEmpty();
+
         List<Path> attachmentPaths = attachments.stream()
                 .map(AttachmentItem::path)
                 .toList();
 
-        String statusMsg = attachmentPaths.isEmpty()
-                ? "Sending message..."
-                : "Sending message with " + attachmentPaths.size() + " attachment(s)...";
-        mainController.setStatus(statusMsg);
+        if (isMultiRecipient) {
+            // Use v2 multi-recipient send
+            if (!attachmentPaths.isEmpty()) {
+                mainController.showInfo("Note", "Attachments not yet supported for multi-recipient messages.");
+            }
 
-        TaskRunner.run("Sending message",
-            () -> services.messages().sendMessageWithAttachments(password, recipient, subject, body,
-                    attachmentPaths, null, null, null),
-            new TaskRunner.TaskCallback<>() {
-                @Override
-                public void onSuccess(MessageService.SendResult result) {
-                    sendButton.setDisable(false);
-                    mainController.showProgress(false);
+            String statusMsg = "Sending to " + totalRecipients + " recipient(s)...";
+            mainController.setStatus(statusMsg);
 
-                    if (result.success()) {
-                        mainController.setStatus("Message sent!");
-                        mainController.showInfo("Success", result.message());
-                        clearForm();
-                    } else {
-                        mainController.setStatus("Failed to send");
-                        mainController.showError("Send Failed", result.message());
+            MessageService.MultiRecipientInput recipients = new MessageService.MultiRecipientInput(
+                new ArrayList<>(toRecipients),
+                ccRecipients.isEmpty() ? null : new ArrayList<>(ccRecipients),
+                bccRecipients.isEmpty() ? null : new ArrayList<>(bccRecipients)
+            );
+
+            TaskRunner.run("Sending multi-recipient message",
+                () -> services.messages().sendMultiRecipientMessage(password, recipients, subject, body,
+                        null, null, null),
+                new TaskRunner.TaskCallback<>() {
+                    @Override
+                    public void onSuccess(MessageService.MultiSendResult result) {
+                        sendButton.setDisable(false);
+                        mainController.showProgress(false);
+
+                        if (result.success()) {
+                            mainController.setStatus("Message sent!");
+                            mainController.showInfo("Success", result.message());
+                            clearForm();
+                        } else {
+                            mainController.setStatus("Failed to send");
+                            mainController.showError("Send Failed", result.message());
+                        }
                     }
-                }
 
-                @Override
-                public void onError(Throwable error) {
-                    sendButton.setDisable(false);
-                    mainController.showProgress(false);
-                    mainController.showError("Error", error.getMessage());
-                }
-            });
+                    @Override
+                    public void onError(Throwable error) {
+                        sendButton.setDisable(false);
+                        mainController.showProgress(false);
+                        mainController.showError("Error", error.getMessage());
+                    }
+                });
+        } else {
+            // Use v1 single-recipient send (backward compatible)
+            String recipient = toRecipients.get(0);
+            String statusMsg = attachmentPaths.isEmpty()
+                    ? "Sending message..."
+                    : "Sending message with " + attachmentPaths.size() + " attachment(s)...";
+            mainController.setStatus(statusMsg);
+
+            TaskRunner.run("Sending message",
+                () -> services.messages().sendMessageWithAttachments(password, recipient, subject, body,
+                        attachmentPaths, null, null, null),
+                new TaskRunner.TaskCallback<>() {
+                    @Override
+                    public void onSuccess(MessageService.SendResult result) {
+                        sendButton.setDisable(false);
+                        mainController.showProgress(false);
+
+                        if (result.success()) {
+                            mainController.setStatus("Message sent!");
+                            mainController.showInfo("Success", result.message());
+                            clearForm();
+                        } else {
+                            mainController.setStatus("Failed to send");
+                            mainController.showError("Send Failed", result.message());
+                        }
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        sendButton.setDisable(false);
+                        mainController.showProgress(false);
+                        mainController.showError("Error", error.getMessage());
+                    }
+                });
+        }
     }
 
     @FXML
     public void clearForm() {
-        recipientCombo.setValue(null);
+        toCombo.setValue(null);
+        ccCombo.setValue(null);
+        bccCombo.setValue(null);
+        toRecipients.clear();
+        ccRecipients.clear();
+        bccRecipients.clear();
         subjectField.clear();
         bodyArea.clear();
         attachments.clear();

@@ -293,6 +293,23 @@
     -fx-text-fill: #666;
 }
 
+.message-to {
+    -fx-font-size: 12px;
+    -fx-text-fill: #555;
+}
+
+.message-cc {
+    -fx-font-size: 12px;
+    -fx-text-fill: #777;
+    -fx-font-style: italic;
+}
+
+.message-bcc {
+    -fx-font-size: 12px;
+    -fx-text-fill: #999;
+    -fx-font-style: italic;
+}
+
 /* Message Content */
 .message-scroll {
     -fx-background-color: white;
@@ -550,4 +567,46 @@
 
 .attachment-clear-btn:hover {
     -fx-text-fill: #e74c3c;
+}
+
+/* ========== Recipient Chip Styles (Compose View) ========== */
+
+.recipient-chip {
+    -fx-background-color: #3498db;
+    -fx-text-fill: white;
+    -fx-padding: 3 8;
+    -fx-background-radius: 12;
+    -fx-font-size: 12px;
+    -fx-cursor: hand;
+}
+
+.recipient-chip:hover {
+    -fx-background-color: #e74c3c;  /* Red on hover = click to remove */
+}
+
+/* Add button for recipients */
+.button-add {
+    -fx-background-color: #27ae60;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-cursor: hand;
+    -fx-padding: 2 8;
+}
+
+.button-add:hover {
+    -fx-background-color: #229954;
+}
+
+/* CC/BCC toggle button */
+.cc-bcc-toggle {
+    -fx-background-color: transparent;
+    -fx-text-fill: #3498db;
+    -fx-font-size: 12px;
+    -fx-cursor: hand;
+    -fx-underline: true;
+}
+
+.cc-bcc-toggle:hover {
+    -fx-text-fill: #2980b9;
 }

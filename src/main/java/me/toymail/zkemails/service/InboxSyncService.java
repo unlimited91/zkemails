@@ -217,19 +217,11 @@ public class InboxSyncService {
     }
 
     /**
-     * Decrypt a message (reused from MessageService pattern).
+     * Decrypt a message (supports v1 header-based and v2 JSON payload).
      */
     private String decryptMessage(ImapClient imap, ImapClient.MailSummary msg, Config cfg, IdentityKeys.KeyBundle myKeys) {
         try {
             Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(msg.uid());
-
-            String ephemX25519PubB64 = first(hdrs, "X-ZKEmails-Ephem-X25519");
-            String wrappedKeyB64 = first(hdrs, "X-ZKEmails-WrappedKey");
-            String wrappedKeyNonceB64 = first(hdrs, "X-ZKEmails-WrappedKey-Nonce");
-            String msgNonceB64 = first(hdrs, "X-ZKEmails-Nonce");
-            String ciphertextB64 = first(hdrs, "X-ZKEmails-Ciphertext");
-            String sigB64 = first(hdrs, "X-ZKEmails-Sig");
-            String recipientFpHex = first(hdrs, "X-ZKEmails-Recipient-Fp");
 
             String fromEmail = extractEmail(msg.from());
             ContactsStore.Contact contact = context.contacts().get(fromEmail);
@@ -237,6 +229,21 @@ public class InboxSyncService {
                 log.debug("No contact found for sender: {}", fromEmail);
                 return null;
             }
+
+            // Check for v2 multi-recipient message
+            String version = first(hdrs, "X-ZKEmails-Version");
+            if ("2".equals(version)) {
+                return decryptV2Message(imap, msg, cfg, myKeys, contact);
+            }
+
+            // V1 header-based decryption
+            String ephemX25519PubB64 = first(hdrs, "X-ZKEmails-Ephem-X25519");
+            String wrappedKeyB64 = first(hdrs, "X-ZKEmails-WrappedKey");
+            String wrappedKeyNonceB64 = first(hdrs, "X-ZKEmails-WrappedKey-Nonce");
+            String msgNonceB64 = first(hdrs, "X-ZKEmails-Nonce");
+            String ciphertextB64 = first(hdrs, "X-ZKEmails-Ciphertext");
+            String sigB64 = first(hdrs, "X-ZKEmails-Sig");
+            String recipientFpHex = first(hdrs, "X-ZKEmails-Recipient-Fp");
 
             CryptoBox.EncryptedPayload payload = new CryptoBox.EncryptedPayload(
                     ephemX25519PubB64, wrappedKeyB64, wrappedKeyNonceB64,
@@ -255,6 +262,42 @@ public class InboxSyncService {
             log.debug("Decryption failed for message {}: {}", msg.uid(), e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Decrypt a v2 multi-recipient message.
+     */
+    private String decryptV2Message(ImapClient imap, ImapClient.MailSummary msg,
+                                     Config cfg, IdentityKeys.KeyBundle myKeys,
+                                     ContactsStore.Contact contact) throws Exception {
+        // Fetch the JSON payload from MIME multipart
+        CryptoBox.EncryptedPayloadV2 payload = imap.fetchJsonPayload(msg.uid());
+        if (payload == null) {
+            log.debug("Failed to fetch v2 JSON payload for UID {}", msg.uid());
+            return null;
+        }
+
+        log.debug("Fetched v2 payload with {} recipients for UID {}", payload.recipients().size(), msg.uid());
+
+        // Get my fingerprint from keys
+        String myFpHex = myKeys.fingerprintHex();
+
+        // Extract primary To recipient from message headers for AAD binding
+        Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(msg.uid());
+        String toHeader = first(hdrs, "To");
+        String primaryTo = toHeader != null ? extractEmail(toHeader.split(",")[0]) : cfg.email;
+
+        String fromEmail = extractEmail(msg.from());
+
+        return CryptoBox.decryptFromMultipleRecipientMessage(
+                fromEmail,
+                primaryTo,
+                msg.subject(),
+                payload,
+                myFpHex,
+                myKeys.x25519PrivateB64(),
+                contact.ed25519PublicB64
+        );
     }
 
     private static String first(Map<String, List<String>> map, String key) {

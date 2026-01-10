@@ -46,6 +46,8 @@
                     <VBox HBox.hgrow="ALWAYS" spacing="2">
                         <Label fx:id="messageSubject" styleClass="message-subject"/>
                         <Label fx:id="messageFrom" styleClass="message-from"/>
+                        <Label fx:id="messageTo" styleClass="message-to" visible="false" managed="false"/>
+                        <Label fx:id="messageCc" styleClass="message-cc" visible="false" managed="false"/>
                         <Label fx:id="messageDate" styleClass="message-date"/>
                     </VBox>
                     <Label styleClass="encrypted-badge" text="Encrypted"/>
@@ -66,17 +68,20 @@
             </VBox>
 
             <!-- Reply Section (always visible when thread is shown) -->
-            <VBox fx:id="replySection" styleClass="reply-section" visible="false" managed="false" spacing="5">
+            <VBox fx:id="replySection" styleClass="reply-section" visible="false" managed="false" spacing="8">
                 <Separator/>
                 <!-- Attachment list (hidden when empty) -->
                 <HBox fx:id="attachmentBar" spacing="5" alignment="CENTER_LEFT" visible="false" managed="false">
                     <Label fx:id="attachmentListLabel" styleClass="attachment-list-text"/>
                     <Button text="x" onAction="#clearReplyAttachments" styleClass="attachment-clear-btn" prefWidth="20" prefHeight="20"/>
                 </HBox>
-                <HBox spacing="8" alignment="CENTER">
-                    <TextArea fx:id="replyTextArea" promptText="Type your reply..." prefRowCount="2" wrapText="true" HBox.hgrow="ALWAYS"/>
-                    <Button text="+" onAction="#addReplyAttachment" styleClass="reply-icon-btn" prefWidth="36" prefHeight="36"/>
-                    <Button text="▶" onAction="#sendInlineReply" styleClass="reply-send-btn" prefWidth="36" prefHeight="36"/>
+                <!-- Text area on its own row -->
+                <TextArea fx:id="replyTextArea" promptText="Type your reply..." prefRowCount="3" wrapText="true" VBox.vgrow="NEVER"/>
+                <!-- Buttons below, aligned right -->
+                <HBox spacing="8" alignment="CENTER_RIGHT">
+                    <Button text="+ Attach" onAction="#addReplyAttachment" styleClass="button-secondary"/>
+                    <Button fx:id="replyAllButton" text="Reply All" onAction="#sendInlineReplyAll" styleClass="button-secondary" visible="false" managed="false"/>
+                    <Button text="Send" onAction="#sendInlineReply" styleClass="button-primary"/>
                 </HBox>
             </VBox>
         </VBox>

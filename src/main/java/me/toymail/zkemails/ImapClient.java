@@ -515,6 +515,50 @@ public final class ImapClient implements AutoCloseable {
     public record AttachmentContainer(int version, List<CryptoBox.EncryptedAttachment> attachments) {}
 
     /**
+     * Fetch the JSON payload (zkemails-payload.json) from a v2 multi-recipient message.
+     * Returns null if not found or not a v2 message.
+     */
+    public CryptoBox.EncryptedPayloadV2 fetchJsonPayload(long uid) throws MessagingException {
+        Message m = uidFolder.getMessageByUID(uid);
+        if (m == null) {
+            log.warn("fetchJsonPayload: message not found for UID {}", uid);
+            return null;
+        }
+
+        try {
+            Object content = m.getContent();
+            if (!(content instanceof MimeMultipart multipart)) {
+                return null;  // Not multipart, not a v2 message
+            }
+
+            // Look for the zkemails-payload.json part
+            for (int i = 0; i < multipart.getCount(); i++) {
+                BodyPart part = multipart.getBodyPart(i);
+                String filename = part.getFileName();
+                if ("zkemails-payload.json".equals(filename)) {
+                    // Parse JSON content
+                    Object partContent = part.getContent();
+                    String json;
+                    if (partContent instanceof String) {
+                        json = (String) partContent;
+                    } else if (partContent instanceof java.io.InputStream is) {
+                        json = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    } else {
+                        log.warn("Unexpected payload part content type: {}", partContent.getClass());
+                        continue;
+                    }
+
+                    ObjectMapper mapper = new ObjectMapper();
+                    return mapper.readValue(json, CryptoBox.EncryptedPayloadV2.class);
+                }
+            }
+            return null;  // No payload found
+        } catch (IOException e) {
+            throw new MessagingException("Failed to parse v2 payload", e);
+        }
+    }
+
+    /**
      * Fetch and parse the encrypted attachment container from a message.
      * Returns null if no attachments or parsing fails.
      */

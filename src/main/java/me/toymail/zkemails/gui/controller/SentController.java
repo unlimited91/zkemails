@@ -49,6 +49,8 @@ public class SentController {
     @FXML private VBox messageHeader;
     @FXML private Label messageSubject;
     @FXML private Label messageTo;
+    @FXML private Label messageCc;
+    @FXML private Label messageBcc;
     @FXML private Label messageDate;
     @FXML private ScrollPane messageScrollPane;
     @FXML private VBox messageContent;
@@ -252,10 +254,41 @@ public class SentController {
 
         // Set header info
         messageSubject.setText(subject != null ? subject : "(no subject)");
-        messageTo.setText("To: " + (lastTo != null ? lastTo : "(unknown)"));
 
-        // Get latest message date
+        // Get latest message for recipient info
         SentStore.SentMessage latestMsg = messages.get(messages.size() - 1);
+
+        // Display To recipients
+        String toDisplay = latestMsg.getRecipientsDisplay();
+        if (toDisplay != null && !toDisplay.isEmpty()) {
+            messageTo.setText("To: " + toDisplay);
+        } else if (lastTo != null) {
+            messageTo.setText("To: " + lastTo);
+        } else {
+            messageTo.setText("To: (unknown)");
+        }
+
+        // Display CC recipients if available
+        if (latestMsg.ccEmails != null && !latestMsg.ccEmails.isEmpty()) {
+            messageCc.setText("Cc: " + String.join(", ", latestMsg.ccEmails));
+            messageCc.setVisible(true);
+            messageCc.setManaged(true);
+        } else {
+            messageCc.setVisible(false);
+            messageCc.setManaged(false);
+        }
+
+        // Display BCC recipients if available
+        if (latestMsg.bccEmails != null && !latestMsg.bccEmails.isEmpty()) {
+            messageBcc.setText("Bcc: " + String.join(", ", latestMsg.bccEmails));
+            messageBcc.setVisible(true);
+            messageBcc.setManaged(true);
+        } else {
+            messageBcc.setVisible(false);
+            messageBcc.setManaged(false);
+        }
+
+        // Display date
         Date latestDate = Date.from(Instant.ofEpochSecond(latestMsg.sentAtEpochSec));
         messageDate.setText(FULL_DATE_FORMAT.format(latestDate));
 
@@ -298,8 +331,13 @@ public class SentController {
         VBox bubble = new VBox(2);
         bubble.getStyleClass().addAll("chat-bubble", "chat-bubble-sent");
 
-        // Recipient info
-        if (msg.toEmail != null) {
+        // Recipient info - show all recipients for multi-recipient messages
+        String recipientDisplay = msg.getRecipientsDisplay();
+        if (recipientDisplay != null && !recipientDisplay.isEmpty()) {
+            Label recipient = new Label("To: " + recipientDisplay);
+            recipient.getStyleClass().add("chat-bubble-header");
+            bubble.getChildren().add(recipient);
+        } else if (msg.toEmail != null) {
             Label recipient = new Label("To: " + msg.toEmail);
             recipient.getStyleClass().add("chat-bubble-header");
             bubble.getChildren().add(recipient);

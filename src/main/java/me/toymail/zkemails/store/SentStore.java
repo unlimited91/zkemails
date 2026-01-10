@@ -25,7 +25,9 @@ import java.util.stream.Stream;
  */
 public final class SentStore {
     private static final Logger log = LoggerFactory.getLogger(SentStore.class);
-    private static final ObjectMapper M = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    private static final ObjectMapper M = new ObjectMapper()
+            .enable(SerializationFeature.INDENT_OUTPUT)
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     // ===== Index file (outbox/index.json) =====
     public static final class SentIndex {
@@ -72,7 +74,10 @@ public final class SentStore {
     public static final class SentMessage {
         public String id;              // UUID for local reference
         public String messageId;       // SMTP Message-ID header for threading
-        public String toEmail;
+        public String toEmail;         // Primary To (kept for backward compatibility)
+        public List<String> toEmails;  // All To recipients (v2)
+        public List<String> ccEmails;  // CC recipients (v2)
+        public List<String> bccEmails; // BCC recipients (v2, stored locally only)
         public String subject;
         public String plaintext;
         public String inReplyTo;       // For threading
@@ -94,6 +99,35 @@ public final class SentStore {
             this.references = references;
             this.threadId = threadId;
             this.sentAtEpochSec = sentAtEpochSec;
+        }
+
+        /**
+         * Get display string for all recipients (To + CC, not BCC).
+         */
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        public String getRecipientsDisplay() {
+            StringBuilder sb = new StringBuilder();
+            if (toEmails != null && !toEmails.isEmpty()) {
+                sb.append(String.join(", ", toEmails));
+            } else if (toEmail != null) {
+                sb.append(toEmail);
+            }
+            if (ccEmails != null && !ccEmails.isEmpty()) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(String.join(", ", ccEmails));
+            }
+            return sb.toString();
+        }
+
+        /**
+         * Get primary recipient for backward compatibility.
+         */
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        public String getPrimaryRecipient() {
+            if (toEmails != null && !toEmails.isEmpty()) {
+                return toEmails.get(0);
+            }
+            return toEmail;
         }
     }
 

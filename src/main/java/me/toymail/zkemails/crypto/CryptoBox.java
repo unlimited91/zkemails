@@ -19,6 +19,7 @@ import java.security.spec.*;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Toy E2E crypto:
@@ -42,6 +43,32 @@ public final class CryptoBox {
             String ciphertextB64,
             String sigB64,
             String recipientFpHex // store recipient's fingerprint, not sender's
+    ) {}
+
+    // ==================== V2 Multi-Recipient Support ====================
+
+    /**
+     * Per-recipient wrapped key data for v2 multi-recipient messages.
+     */
+    public record RecipientKey(
+            String fpHex,
+            String wrappedKeyB64,
+            String wrappedKeyNonceB64
+    ) {}
+
+    /**
+     * V2 encrypted payload with support for multiple recipients.
+     * Single ciphertext shared across all recipients, each with their own wrapped key.
+     */
+    public record EncryptedPayloadV2(
+            int version,  // Always 2
+            String enc,   // "x25519+hkdf+aesgcm;sig=ed25519"
+            String senderFpHex,
+            String ephemX25519PubB64,
+            String msgNonceB64,
+            String ciphertextB64,
+            String sigB64,
+            List<RecipientKey> recipients
     ) {}
 
     /**
@@ -356,6 +383,223 @@ public final class CryptoBox {
         }
 
         return new DecryptedMessageWithAttachments(plaintext, decryptedAttachments);
+    }
+
+    // ==================== V2 Multi-Recipient Encryption/Decryption ====================
+
+    /**
+     * Encrypt a message to multiple recipients.
+     * Uses a shared ciphertext with per-recipient wrapped keys.
+     *
+     * @param fromEmail sender email (for AAD)
+     * @param primaryToEmail primary recipient email (for AAD binding)
+     * @param subject email subject (for AAD)
+     * @param plaintext message content
+     * @param senderKeys sender's key bundle for signing
+     * @param recipientKeys map of recipient fingerprint -> X25519 public key (base64)
+     * @return EncryptedPayloadV2 with shared ciphertext and per-recipient wrapped keys
+     */
+    public static EncryptedPayloadV2 encryptToMultipleRecipients(
+            String fromEmail, String primaryToEmail, String subject,
+            String plaintext,
+            IdentityKeys.KeyBundle senderKeys,
+            Map<String, String> recipientKeys) throws Exception {
+
+        if (recipientKeys == null || recipientKeys.isEmpty()) {
+            throw new IllegalArgumentException("At least one recipient required");
+        }
+
+        // Generate random message key and encrypt plaintext
+        byte[] msgKey = rand(32);
+        byte[] msgNonce = rand(12);
+        byte[] ct = aesGcmEncrypt(msgKey, msgNonce, aad(fromEmail, primaryToEmail, subject),
+                plaintext.getBytes(StandardCharsets.UTF_8));
+
+        // Generate ONE shared ephemeral X25519 key pair
+        KeyPair ephem = x25519KeyPair();
+        byte[] ephemPubEncoded = ephem.getPublic().getEncoded();
+
+        // Wrap message key for each recipient
+        List<RecipientKey> recipientKeyList = new ArrayList<>();
+        for (Map.Entry<String, String> entry : recipientKeys.entrySet()) {
+            String recipientFpHex = entry.getKey();
+            String recipientX25519PubB64 = entry.getValue();
+
+            PublicKey recipientPub = KeyFactory.getInstance("X25519", "BC")
+                    .generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(recipientX25519PubB64)));
+
+            byte[] shared = x25519SharedSecret(ephem.getPrivate(), recipientPub);
+
+            // Per-recipient HKDF salt using their fingerprint
+            byte[] salt = sha256(("zkemails-wrap:" + recipientFpHex).getBytes(StandardCharsets.UTF_8));
+            byte[] wrapKey = hkdfSha256(shared, salt, "wrap-key".getBytes(StandardCharsets.UTF_8), 32);
+
+            byte[] wrapNonce = rand(12);
+            byte[] wrapped = aesGcmEncrypt(wrapKey, wrapNonce, null, msgKey);
+
+            recipientKeyList.add(new RecipientKey(
+                    recipientFpHex,
+                    Base64.getEncoder().encodeToString(wrapped),
+                    Base64.getEncoder().encodeToString(wrapNonce)
+            ));
+        }
+
+        // Build signature input (includes all recipient fingerprints for tamper protection)
+        byte[] toSign = buildSignatureInputV2(
+                ephemPubEncoded,
+                msgNonce,
+                ct,
+                aad(fromEmail, primaryToEmail, subject),
+                recipientKeyList
+        );
+        byte[] sig = ed25519Sign(senderKeys.ed25519PrivateB64(), toSign);
+
+        return new EncryptedPayloadV2(
+                2,
+                "x25519+hkdf+aesgcm;sig=ed25519",
+                senderKeys.fingerprintHex(),
+                Base64.getEncoder().encodeToString(ephemPubEncoded),
+                Base64.getEncoder().encodeToString(msgNonce),
+                Base64.getEncoder().encodeToString(ct),
+                Base64.getEncoder().encodeToString(sig),
+                recipientKeyList
+        );
+    }
+
+    /**
+     * Decrypt a v2 multi-recipient message.
+     *
+     * @param fromEmail sender email (for AAD)
+     * @param primaryToEmail primary recipient email (for AAD)
+     * @param subject email subject (for AAD)
+     * @param payload the encrypted v2 payload
+     * @param myFpHex recipient's fingerprint (to find their wrapped key)
+     * @param myX25519PrivB64 recipient's X25519 private key (base64)
+     * @param senderEd25519PubB64 sender's Ed25519 public key for signature verification
+     * @return decrypted plaintext
+     */
+    public static String decryptFromMultipleRecipientMessage(
+            String fromEmail, String primaryToEmail, String subject,
+            EncryptedPayloadV2 payload,
+            String myFpHex,
+            String myX25519PrivB64,
+            String senderEd25519PubB64) throws Exception {
+
+        // Find my wrapped key
+        RecipientKey myKey = null;
+        for (RecipientKey rk : payload.recipients()) {
+            if (rk.fpHex().equals(myFpHex)) {
+                myKey = rk;
+                break;
+            }
+        }
+        if (myKey == null) {
+            throw new SecurityException("Message not encrypted for this recipient: " + myFpHex);
+        }
+
+        // Verify signature (includes all recipient FPs)
+        byte[] ephemPubBytes = Base64.getDecoder().decode(payload.ephemX25519PubB64());
+        byte[] msgNonce = Base64.getDecoder().decode(payload.msgNonceB64());
+        byte[] ct = Base64.getDecoder().decode(payload.ciphertextB64());
+
+        byte[] toVerify = buildSignatureInputV2(
+                ephemPubBytes,
+                msgNonce,
+                ct,
+                aad(fromEmail, primaryToEmail, subject),
+                payload.recipients()
+        );
+        byte[] sig = Base64.getDecoder().decode(payload.sigB64());
+        if (!ed25519Verify(senderEd25519PubB64, toVerify, sig)) {
+            throw new SecurityException("Signature verification failed");
+        }
+
+        // Unwrap message key
+        PublicKey ephemPub = KeyFactory.getInstance("X25519", "BC")
+                .generatePublic(new X509EncodedKeySpec(ephemPubBytes));
+
+        PrivateKey myPriv = KeyFactory.getInstance("X25519", "BC")
+                .generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(myX25519PrivB64)));
+
+        byte[] shared = x25519SharedSecret(myPriv, ephemPub);
+
+        byte[] salt = sha256(("zkemails-wrap:" + myFpHex).getBytes(StandardCharsets.UTF_8));
+        byte[] wrapKey = hkdfSha256(shared, salt, "wrap-key".getBytes(StandardCharsets.UTF_8), 32);
+
+        byte[] msgKey = aesGcmDecrypt(
+                wrapKey,
+                Base64.getDecoder().decode(myKey.wrappedKeyNonceB64()),
+                null,
+                Base64.getDecoder().decode(myKey.wrappedKeyB64())
+        );
+
+        // Decrypt message
+        byte[] pt = aesGcmDecrypt(msgKey, msgNonce, aad(fromEmail, primaryToEmail, subject), ct);
+        return new String(pt, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Build canonical bytes for v2 signature.
+     * Includes all recipient fingerprints to prevent recipient list tampering.
+     */
+    private static byte[] buildSignatureInputV2(
+            byte[] ephemPubEncoded,
+            byte[] msgNonce,
+            byte[] ciphertext,
+            byte[] aad,
+            List<RecipientKey> recipients) throws Exception {
+
+        // Build deterministic recipient data (sorted by fingerprint for consistency)
+        List<RecipientKey> sorted = new ArrayList<>(recipients);
+        sorted.sort((a, b) -> a.fpHex().compareTo(b.fpHex()));
+
+        List<byte[]> parts = new ArrayList<>();
+        parts.add(ephemPubEncoded);
+        parts.add(msgNonce);
+        parts.add(ciphertext);
+        parts.add(aad);
+
+        // Include each recipient's fingerprint and wrapped key data
+        for (RecipientKey rk : sorted) {
+            parts.add(rk.fpHex().getBytes(StandardCharsets.UTF_8));
+            parts.add(Base64.getDecoder().decode(rk.wrappedKeyB64()));
+            parts.add(Base64.getDecoder().decode(rk.wrappedKeyNonceB64()));
+        }
+
+        return concat(parts.toArray(new byte[0][]));
+    }
+
+    /**
+     * Create a v2 payload for a BCC recipient.
+     * BCC recipients require SEPARATE encryption for true privacy (they cannot see other recipients).
+     * This method creates a fresh payload with only the BCC recipient as the target.
+     *
+     * Note: This creates a new encryption with its own ephemeral key and signature,
+     * ensuring BCC recipients cannot verify or deduce other recipients.
+     *
+     * @param fromEmail sender email
+     * @param bccEmail BCC recipient email (used for AAD binding)
+     * @param subject email subject
+     * @param plaintext message content (same as main message)
+     * @param senderKeys sender's key bundle
+     * @param bccFpHex BCC recipient's fingerprint
+     * @param bccX25519PubB64 BCC recipient's X25519 public key
+     * @return fresh EncryptedPayloadV2 for the BCC recipient
+     */
+    public static EncryptedPayloadV2 encryptForBccRecipient(
+            String fromEmail, String bccEmail, String subject,
+            String plaintext,
+            IdentityKeys.KeyBundle senderKeys,
+            String bccFpHex,
+            String bccX25519PubB64) throws Exception {
+
+        // BCC gets its own encryption for privacy
+        return encryptToMultipleRecipients(
+                fromEmail, bccEmail, subject,
+                plaintext,
+                senderKeys,
+                Map.of(bccFpHex, bccX25519PubB64)
+        );
     }
 
     /**

@@ -58,6 +58,8 @@ public class MessagesController {
     @FXML private VBox messageHeader;
     @FXML private Label messageSubject;
     @FXML private Label messageFrom;
+    @FXML private Label messageTo;
+    @FXML private Label messageCc;
     @FXML private Label messageDate;
     @FXML private ScrollPane messageScrollPane;
     @FXML private VBox messageContent;
@@ -68,6 +70,7 @@ public class MessagesController {
     @FXML private TextArea replyTextArea;
     @FXML private HBox attachmentBar;
     @FXML private Label attachmentListLabel;
+    @FXML private Button replyAllButton;
 
     // Reply attachments
     private final java.util.List<java.nio.file.Path> replyAttachments = new java.util.ArrayList<>();
@@ -462,6 +465,27 @@ public class MessagesController {
         if (!thread.messages().isEmpty()) {
             var latestMsg = thread.messages().get(thread.messages().size() - 1);
             messageFrom.setText(latestMsg.from());
+
+            // Display To recipients if available
+            if (latestMsg.to() != null && !latestMsg.to().isBlank()) {
+                messageTo.setText("To: " + latestMsg.to());
+                messageTo.setVisible(true);
+                messageTo.setManaged(true);
+            } else {
+                messageTo.setVisible(false);
+                messageTo.setManaged(false);
+            }
+
+            // Display CC recipients if available
+            if (latestMsg.cc() != null && !latestMsg.cc().isBlank()) {
+                messageCc.setText("Cc: " + latestMsg.cc());
+                messageCc.setVisible(true);
+                messageCc.setManaged(true);
+            } else {
+                messageCc.setVisible(false);
+                messageCc.setManaged(false);
+            }
+
             if (latestMsg.received() != null) {
                 messageDate.setText(FULL_DATE_FORMAT.format(latestMsg.received()));
             } else {
@@ -620,12 +644,40 @@ public class MessagesController {
             cacheService.getReplyContext(messageUid)
                 .thenAccept(context -> Platform.runLater(() -> {
                     currentReplyContext = context;
+                    updateReplyAllButton(context);
                 }))
                 .exceptionally(error -> {
                     // Silently fail - we'll fetch on demand if needed
                     return null;
                 });
         }
+    }
+
+    /**
+     * Show Reply All button if message has multiple recipients.
+     */
+    private void updateReplyAllButton(MessageService.ReplyContext context) {
+        if (context == null) {
+            replyAllButton.setVisible(false);
+            replyAllButton.setManaged(false);
+            return;
+        }
+
+        boolean hasMultipleRecipients = false;
+        int totalRecipients = 0;
+        if (context.allToEmails() != null) {
+            totalRecipients += context.allToEmails().size();
+        }
+        if (context.ccEmails() != null) {
+            totalRecipients += context.ccEmails().size();
+        }
+
+        // Show Reply All if there are at least 2 recipients total (sender + at least one other)
+        hasMultipleRecipients = totalRecipients > 1 ||
+            (context.ccEmails() != null && !context.ccEmails().isEmpty());
+
+        replyAllButton.setVisible(hasMultipleRecipients);
+        replyAllButton.setManaged(hasMultipleRecipients);
     }
 
     /**
@@ -855,6 +907,135 @@ public class MessagesController {
                 });
                 return null;
             });
+        }
+    }
+
+    /**
+     * Send reply to all recipients (Reply All).
+     * Only includes recipients who have ready contacts (with exchanged keys).
+     */
+    @FXML
+    public void sendInlineReplyAll() {
+        String body = replyTextArea.getText();
+        if (body == null || body.isBlank()) {
+            mainController.showError("Empty Reply", "Please enter a reply message.");
+            return;
+        }
+
+        if (currentReplyContext == null) {
+            mainController.showError("No Context", "Reply context not available. Please select a message.");
+            return;
+        }
+
+        // Build recipient list: original sender + all To + all CC, minus self
+        // Only include recipients who have ready contacts (with exchanged keys)
+        java.util.List<String> toEmails = new java.util.ArrayList<>();
+        java.util.List<String> ccEmails = new java.util.ArrayList<>();
+        int skippedCount = 0;
+
+        // Check if original sender has ready contact
+        if (isContactReady(currentReplyContext.toEmail())) {
+            toEmails.add(currentReplyContext.toEmail());
+        } else {
+            skippedCount++;
+        }
+
+        // Add other To recipients to CC (excluding self and sender, only if contact ready)
+        if (currentReplyContext.allToEmails() != null) {
+            for (String email : currentReplyContext.allToEmails()) {
+                if (!email.equalsIgnoreCase(currentUserEmail) &&
+                    !email.equalsIgnoreCase(currentReplyContext.toEmail())) {
+                    if (isContactReady(email)) {
+                        ccEmails.add(email);
+                    } else {
+                        skippedCount++;
+                    }
+                }
+            }
+        }
+
+        // Add CC recipients to CC (excluding self, only if contact ready)
+        if (currentReplyContext.ccEmails() != null) {
+            for (String email : currentReplyContext.ccEmails()) {
+                if (!email.equalsIgnoreCase(currentUserEmail)) {
+                    if (isContactReady(email)) {
+                        ccEmails.add(email);
+                    } else {
+                        skippedCount++;
+                    }
+                }
+            }
+        }
+
+        // Check if we have any recipients
+        if (toEmails.isEmpty() && ccEmails.isEmpty()) {
+            mainController.showError("No Recipients",
+                "None of the recipients have ready contacts with exchanged keys.\n" +
+                "Use regular Reply to respond only to the sender.");
+            return;
+        }
+
+        // If some recipients were skipped, use regular reply instead
+        if (toEmails.isEmpty()) {
+            // Move first CC to To
+            toEmails.add(ccEmails.remove(0));
+        }
+
+        // Build MultiRecipientInput and send
+        MessageService.MultiRecipientInput recipients = new MessageService.MultiRecipientInput(
+            toEmails,
+            ccEmails.isEmpty() ? null : ccEmails,
+            null  // No BCC for Reply All
+        );
+
+        // Capture attachments before clearing
+        java.util.List<java.nio.file.Path> attachments = new java.util.ArrayList<>(replyAttachments);
+
+        // Immediately add the sent message to the chat view (optimistic UI)
+        addSentMessageBubble(body, attachments);
+        clearReplyTextArea();
+
+        int totalRecipients = toEmails.size() + ccEmails.size();
+        String statusMsg = skippedCount > 0
+            ? "Sending to " + totalRecipients + " recipient(s) (" + skippedCount + " skipped - no keys)..."
+            : "Sending to " + totalRecipients + " recipient(s)...";
+        mainController.setStatus(statusMsg);
+
+        String password = mainController.getPassword();
+        if (password == null) return;
+
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return services.messages().sendMultiRecipientMessage(
+                    password, recipients, currentReplyContext.subject(), body,
+                    currentReplyContext.originalMessageId(), currentReplyContext.references(),
+                    currentReplyContext.threadId()
+                );
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
+        }).thenAccept(result -> Platform.runLater(() -> {
+            if (result.success()) {
+                mainController.setStatus("Reply sent!");
+            } else {
+                mainController.showError("Send Failed", "Failed to send reply. Please try again.");
+            }
+        })).exceptionally(error -> {
+            Platform.runLater(() -> {
+                mainController.showError("Send Failed", "Failed to send reply. Please try again.");
+            });
+            return null;
+        });
+    }
+
+    /**
+     * Check if a contact is ready (has exchanged keys).
+     */
+    private boolean isContactReady(String email) {
+        try {
+            return services.contacts().isContactReady(email);
+        } catch (Exception e) {
+            return false;
         }
     }
 

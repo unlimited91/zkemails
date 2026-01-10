@@ -34,6 +34,8 @@ public final class MessageService {
     public record DecryptedMessage(
         long uid,
         String from,
+        String to,              // To recipients (v2)
+        String cc,              // CC recipients (v2)
         String subject,
         Date received,
         String plaintext,
@@ -42,7 +44,12 @@ public final class MessageService {
     ) {
         public DecryptedMessage(long uid, String from, String subject, Date received,
                                String plaintext, boolean decryptionSuccessful) {
-            this(uid, from, subject, received, plaintext, decryptionSuccessful, List.of());
+            this(uid, from, null, null, subject, received, plaintext, decryptionSuccessful, List.of());
+        }
+
+        public DecryptedMessage(long uid, String from, String subject, Date received,
+                               String plaintext, boolean decryptionSuccessful, List<AttachmentInfo> attachments) {
+            this(uid, from, null, null, subject, received, plaintext, decryptionSuccessful, attachments);
         }
     }
 
@@ -61,6 +68,43 @@ public final class MessageService {
      * Result of sending a message.
      */
     public record SendResult(boolean success, String message) {}
+
+    // ==================== V2 Multi-Recipient Support ====================
+
+    /**
+     * Input for multi-recipient message sending.
+     */
+    public record MultiRecipientInput(
+        List<String> toEmails,
+        List<String> ccEmails,
+        List<String> bccEmails
+    ) {
+        public List<String> visibleRecipients() {
+            List<String> result = new ArrayList<>();
+            if (toEmails != null) result.addAll(toEmails);
+            if (ccEmails != null) result.addAll(ccEmails);
+            return result;
+        }
+
+        public List<String> allRecipients() {
+            List<String> result = new ArrayList<>();
+            if (toEmails != null) result.addAll(toEmails);
+            if (ccEmails != null) result.addAll(ccEmails);
+            if (bccEmails != null) result.addAll(bccEmails);
+            return result;
+        }
+    }
+
+    /**
+     * Result of sending a multi-recipient message.
+     */
+    public record MultiSendResult(
+        boolean success,
+        String message,
+        String mainMessageId,
+        List<String> bccMessageIds,
+        List<String> failedRecipients
+    ) {}
 
     /**
      * Thread messages with metadata.
@@ -214,6 +258,8 @@ public final class MessageService {
             all.add(new DecryptedMessage(
                 m.uid,
                 m.from,
+                m.to,      // To recipients
+                m.cc,      // CC recipients
                 m.subject,
                 new Date(m.receivedEpochSec * 1000),
                 m.plaintext,
@@ -228,6 +274,8 @@ public final class MessageService {
             all.add(new DecryptedMessage(
                 -1,  // No UID for local sent messages
                 currentUserEmail,
+                m.getRecipientsDisplay(),  // To: all visible recipients
+                null,                      // CC: included in recipients display
                 m.subject,
                 new Date(m.sentAtEpochSec * 1000),
                 m.plaintext,
@@ -719,6 +767,162 @@ public final class MessageService {
         return new SendResult(true, "Encrypted message sent to " + toEmail + attachmentInfo);
     }
 
+    // ==================== V2 Multi-Recipient Send ====================
+
+    /**
+     * Send an encrypted v2 message to multiple recipients.
+     *
+     * @param password the app password
+     * @param recipients the To/CC/BCC recipients
+     * @param subject the message subject
+     * @param body the message body
+     * @param inReplyTo Message-ID of message being replied to (null for new)
+     * @param references thread reference chain (null for new)
+     * @param threadId custom thread ID (null to generate new one)
+     * @return result with message IDs and any failed recipients
+     */
+    public MultiSendResult sendMultiRecipientMessage(
+            String password,
+            MultiRecipientInput recipients,
+            String subject, String body,
+            String inReplyTo, String references, String threadId) throws Exception {
+
+        if (!context.hasActiveProfile()) {
+            return new MultiSendResult(false, "No active profile set", null, null, null);
+        }
+
+        Config cfg = context.zkStore().readJson("config.json", Config.class);
+        IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
+
+        if (cfg == null) {
+            return new MultiSendResult(false, "Not initialized. Run: zke init --email <your-email>", null, null, null);
+        }
+        if (myKeys == null) {
+            return new MultiSendResult(false, "Missing keys.json. Re-run init.", null, null, null);
+        }
+
+        if (recipients == null || recipients.allRecipients().isEmpty()) {
+            return new MultiSendResult(false, "At least one recipient required", null, null, null);
+        }
+        if (subject == null || subject.isBlank()) {
+            return new MultiSendResult(false, "Subject is required", null, null, null);
+        }
+        if (body == null || body.isBlank()) {
+            return new MultiSendResult(false, "Cannot send empty message", null, null, null);
+        }
+
+        // Validate all recipients have keys and build key map
+        Map<String, String> recipientFpToX25519 = new LinkedHashMap<>();
+        Map<String, String> emailToFp = new LinkedHashMap<>();
+        List<String> failedRecipients = new ArrayList<>();
+
+        for (String email : recipients.allRecipients()) {
+            ContactsStore.Contact c = context.contacts().get(email);
+            if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
+                failedRecipients.add(email);
+            } else {
+                recipientFpToX25519.put(c.fingerprintHex, c.x25519PublicB64);
+                emailToFp.put(email, c.fingerprintHex);
+            }
+        }
+
+        if (!failedRecipients.isEmpty()) {
+            return new MultiSendResult(false,
+                "Missing keys for contacts: " + String.join(", ", failedRecipients),
+                null, null, failedRecipients);
+        }
+
+        // Generate thread ID for new messages
+        String effectiveThreadId = threadId;
+        if (effectiveThreadId == null || effectiveThreadId.isBlank()) {
+            effectiveThreadId = UUID.randomUUID().toString();
+        }
+
+        // Get primary To recipient for AAD binding
+        String primaryTo = recipients.toEmails() != null && !recipients.toEmails().isEmpty()
+            ? recipients.toEmails().get(0) : recipients.allRecipients().get(0);
+
+        // Encrypt for visible recipients (To + CC)
+        Map<String, String> visibleRecipientKeys = new LinkedHashMap<>();
+        for (String email : recipients.visibleRecipients()) {
+            String fp = emailToFp.get(email);
+            visibleRecipientKeys.put(fp, recipientFpToX25519.get(fp));
+        }
+
+        String mainMessageId = null;
+        List<String> bccMessageIds = new ArrayList<>();
+
+        try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(
+                cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
+
+            // Send main email to To/CC recipients if any
+            if (!recipients.visibleRecipients().isEmpty()) {
+                CryptoBox.EncryptedPayloadV2 mainPayload = CryptoBox.encryptToMultipleRecipients(
+                    cfg.email, primaryTo, subject, body, myKeys, visibleRecipientKeys
+                );
+
+                mainMessageId = smtp.sendEncryptedMultiRecipientMessage(
+                    cfg.email,
+                    recipients.toEmails(),
+                    recipients.ccEmails(),
+                    subject,
+                    mainPayload,
+                    inReplyTo, references, effectiveThreadId
+                );
+            }
+
+            // Send separate emails to BCC recipients
+            if (recipients.bccEmails() != null) {
+                for (String bccEmail : recipients.bccEmails()) {
+                    String bccFp = emailToFp.get(bccEmail);
+                    String bccX25519 = recipientFpToX25519.get(bccFp);
+
+                    // Encrypt separately for BCC privacy
+                    CryptoBox.EncryptedPayloadV2 bccPayload = CryptoBox.encryptForBccRecipient(
+                        cfg.email, bccEmail, subject, body, myKeys, bccFp, bccX25519
+                    );
+
+                    String bccMsgId = smtp.sendEncryptedBccMessage(
+                        cfg.email,
+                        bccEmail,
+                        recipients.toEmails(),  // Show To addresses for context
+                        subject,
+                        bccPayload,
+                        inReplyTo, references, effectiveThreadId
+                    );
+                    bccMessageIds.add(bccMsgId);
+                }
+            }
+        }
+
+        // Save sent message locally
+        try {
+            SentStore.SentMessage sentMsg = new SentStore.SentMessage(
+                    UUID.randomUUID().toString(),
+                    mainMessageId != null ? mainMessageId : (bccMessageIds.isEmpty() ? null : bccMessageIds.get(0)),
+                    primaryTo,  // Keep for backward compat
+                    subject,
+                    body,
+                    inReplyTo,
+                    references,
+                    effectiveThreadId,
+                    java.time.Instant.now().getEpochSecond()
+            );
+            // Set multi-recipient fields
+            sentMsg.toEmails = recipients.toEmails() != null ? new ArrayList<>(recipients.toEmails()) : null;
+            sentMsg.ccEmails = recipients.ccEmails() != null ? new ArrayList<>(recipients.ccEmails()) : null;
+            sentMsg.bccEmails = recipients.bccEmails() != null ? new ArrayList<>(recipients.bccEmails()) : null;
+            context.sentStore().save(sentMsg);
+        } catch (Exception e) {
+            log.warn("Sent message but failed to save locally: {}", e.getMessage());
+        }
+
+        int totalRecipients = recipients.allRecipients().size();
+        return new MultiSendResult(true,
+            "Encrypted message sent to " + totalRecipients + " recipient(s)",
+            mainMessageId, bccMessageIds, null);
+    }
+
     /**
      * Reply to a message.
      * @param password the app password
@@ -816,13 +1020,21 @@ public final class MessageService {
      * Get reply context for a message (recipient, subject, quoted text, thread ID).
      */
     public record ReplyContext(
-        String toEmail,
+        String toEmail,           // Original sender (for Reply)
+        List<String> allToEmails, // All To recipients (for Reply All)
+        List<String> ccEmails,    // CC recipients (for Reply All)
         String subject,
         String quotedBody,
         String originalMessageId,
         String references,
         String threadId  // Custom ZKE thread ID for correlation
-    ) {}
+    ) {
+        // Convenience constructor for backward compatibility
+        public ReplyContext(String toEmail, String subject, String quotedBody,
+                           String originalMessageId, String references, String threadId) {
+            this(toEmail, null, null, subject, quotedBody, originalMessageId, references, threadId);
+        }
+    }
 
     /**
      * Get reply context for a message.
@@ -888,7 +1100,15 @@ public final class MessageService {
             newReferences = newReferences.trim();
             if (newReferences.isEmpty()) newReferences = null;
 
-            return new ReplyContext(toEmail, replySubject, quotedBody, originalMessageId, newReferences, threadId);
+            // Extract To and CC headers for Reply All
+            Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(messageUid);
+            String toHeader = first(hdrs, "To");
+            String ccHeader = first(hdrs, "Cc");
+            List<String> allToEmails = parseEmailList(toHeader);
+            List<String> ccEmails = parseEmailList(ccHeader);
+
+            return new ReplyContext(toEmail, allToEmails, ccEmails, replySubject, quotedBody,
+                    originalMessageId, newReferences, threadId);
         } catch (Exception e) {
             ImapConnectionPool.getInstance().invalidateConnection(imap);
             throw e;
@@ -913,16 +1133,9 @@ public final class MessageService {
             Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(msg.uid());
             System.out.println("=== DECRYPT DEBUG: Fetched " + hdrs.size() + " headers");
 
-            String ephemX25519PubB64 = first(hdrs, "X-ZKEmails-Ephem-X25519");
-            String wrappedKeyB64 = first(hdrs, "X-ZKEmails-WrappedKey");
-            String wrappedKeyNonceB64 = first(hdrs, "X-ZKEmails-WrappedKey-Nonce");
-            String msgNonceB64 = first(hdrs, "X-ZKEmails-Nonce");
-            String ciphertextB64 = first(hdrs, "X-ZKEmails-Ciphertext");
-            String sigB64 = first(hdrs, "X-ZKEmails-Sig");
-            String recipientFpHex = first(hdrs, "X-ZKEmails-Recipient-Fp");
-
-            System.out.println("=== DECRYPT DEBUG: ephemKey=" + (ephemX25519PubB64 != null) +
-                " wrappedKey=" + (wrappedKeyB64 != null) + " ciphertext=" + (ciphertextB64 != null));
+            // Check version header for v2 multi-recipient messages
+            String version = first(hdrs, "X-ZKEmails-Version");
+            System.out.println("=== DECRYPT DEBUG: Message version='" + version + "' (is v2: " + "2".equals(version) + ")");
 
             String fromEmail = extractEmail(msg.from());
             System.out.println("=== DECRYPT DEBUG: fromEmail=" + fromEmail);
@@ -933,24 +1146,117 @@ public final class MessageService {
             }
             System.out.println("=== DECRYPT DEBUG: Contact found, attempting decryption");
 
-            CryptoBox.EncryptedPayload payload = new CryptoBox.EncryptedPayload(
-                    ephemX25519PubB64, wrappedKeyB64, wrappedKeyNonceB64,
-                    msgNonceB64, ciphertextB64, sigB64, recipientFpHex
-            );
+            // V2 multi-recipient message: fetch JSON payload from MIME
+            if ("2".equals(version)) {
+                return decryptV2Message(imap, msg, cfg, myKeys, contact);
+            }
 
-            String result = CryptoBox.decryptForRecipient(
-                    fromEmail,
-                    cfg.email,
-                    msg.subject(),
-                    payload,
-                    myKeys.x25519PrivateB64(),
-                    contact.ed25519PublicB64
-            );
-            System.out.println("=== DECRYPT DEBUG: Decryption " + (result != null ? "succeeded" : "returned null"));
-            return result;
+            // V1 header-based message (default/fallback)
+            return decryptV1Message(hdrs, msg, cfg, myKeys, fromEmail, contact);
         } catch (Exception e) {
             System.out.println("=== DECRYPT DEBUG: Exception: " + e.getMessage());
             e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Decrypt a v1 header-based encrypted message.
+     */
+    private String decryptV1Message(Map<String, List<String>> hdrs, ImapClient.MailSummary msg,
+                                     Config cfg, IdentityKeys.KeyBundle myKeys,
+                                     String fromEmail, ContactsStore.Contact contact) throws Exception {
+        String ephemX25519PubB64 = first(hdrs, "X-ZKEmails-Ephem-X25519");
+        String wrappedKeyB64 = first(hdrs, "X-ZKEmails-WrappedKey");
+        String wrappedKeyNonceB64 = first(hdrs, "X-ZKEmails-WrappedKey-Nonce");
+        String msgNonceB64 = first(hdrs, "X-ZKEmails-Nonce");
+        String ciphertextB64 = first(hdrs, "X-ZKEmails-Ciphertext");
+        String sigB64 = first(hdrs, "X-ZKEmails-Sig");
+        String recipientFpHex = first(hdrs, "X-ZKEmails-Recipient-Fp");
+
+        System.out.println("=== DECRYPT DEBUG (v1): ephemKey=" + (ephemX25519PubB64 != null) +
+            " wrappedKey=" + (wrappedKeyB64 != null) + " ciphertext=" + (ciphertextB64 != null));
+
+        CryptoBox.EncryptedPayload payload = new CryptoBox.EncryptedPayload(
+                ephemX25519PubB64, wrappedKeyB64, wrappedKeyNonceB64,
+                msgNonceB64, ciphertextB64, sigB64, recipientFpHex
+        );
+
+        String result = CryptoBox.decryptForRecipient(
+                fromEmail,
+                cfg.email,
+                msg.subject(),
+                payload,
+                myKeys.x25519PrivateB64(),
+                contact.ed25519PublicB64
+        );
+        System.out.println("=== DECRYPT DEBUG (v1): Decryption " + (result != null ? "succeeded" : "returned null"));
+        return result;
+    }
+
+    /**
+     * Decrypt a v2 multi-recipient encrypted message.
+     */
+    private String decryptV2Message(ImapClient imap, ImapClient.MailSummary msg,
+                                     Config cfg, IdentityKeys.KeyBundle myKeys,
+                                     ContactsStore.Contact contact) throws Exception {
+        // Fetch the JSON payload from MIME multipart
+        CryptoBox.EncryptedPayloadV2 payload = imap.fetchJsonPayload(msg.uid());
+        if (payload == null) {
+            System.out.println("=== DECRYPT DEBUG (v2): Failed to fetch JSON payload");
+            return null;
+        }
+
+        System.out.println("=== DECRYPT DEBUG (v2): Fetched v2 payload with " + payload.recipients().size() + " recipients");
+
+        // Get my fingerprint from keys
+        String myFpHex = myKeys.fingerprintHex();
+        System.out.println("=== DECRYPT DEBUG (v2): My fingerprint: " + myFpHex);
+        System.out.println("=== DECRYPT DEBUG (v2): Recipient fingerprints in payload:");
+        for (CryptoBox.RecipientKey rk : payload.recipients()) {
+            System.out.println("  - " + rk.fpHex());
+        }
+
+        // Extract primary To recipient from message headers for AAD binding
+        String primaryTo = extractPrimaryTo(imap, msg.uid());
+        System.out.println("=== DECRYPT DEBUG (v2): Extracted primaryTo from headers: " + primaryTo);
+        if (primaryTo == null) {
+            primaryTo = cfg.email;  // Fallback to self
+            System.out.println("=== DECRYPT DEBUG (v2): Using fallback primaryTo: " + primaryTo);
+        }
+
+        String fromEmail = extractEmail(msg.from());
+        System.out.println("=== DECRYPT DEBUG (v2): fromEmail=" + fromEmail + ", primaryTo=" + primaryTo + ", subject=" + msg.subject());
+
+        try {
+            String result = CryptoBox.decryptFromMultipleRecipientMessage(
+                    fromEmail,
+                    primaryTo,
+                    msg.subject(),
+                    payload,
+                    myFpHex,
+                    myKeys.x25519PrivateB64(),
+                    contact.ed25519PublicB64
+            );
+            System.out.println("=== DECRYPT DEBUG (v2): Decryption " + (result != null ? "succeeded" : "returned null"));
+            return result;
+        } catch (Exception e) {
+            System.out.println("=== DECRYPT DEBUG (v2): Decryption failed: " + e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Extract primary To recipient from message headers.
+     */
+    private String extractPrimaryTo(ImapClient imap, long uid) {
+        try {
+            Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(uid);
+            String toHeader = first(hdrs, "To");
+            if (toHeader == null) return null;
+            // Take first email from To header
+            return extractEmail(toHeader.split(",")[0]);
+        } catch (Exception e) {
             return null;
         }
     }
@@ -963,6 +1269,19 @@ public final class MessageService {
             return from.substring(start + 1, end).trim();
         }
         return from.trim();
+    }
+
+    /**
+     * Parse a comma-separated email list header into individual addresses.
+     */
+    private List<String> parseEmailList(String header) {
+        if (header == null || header.isBlank()) return List.of();
+        return java.util.Arrays.stream(header.split(","))
+            .map(String::trim)
+            .map(this::extractEmail)
+            .filter(java.util.Objects::nonNull)
+            .filter(s -> !s.isBlank())
+            .toList();
     }
 
     private String quoteText(String text) {

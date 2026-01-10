@@ -79,7 +79,8 @@ public class InboxStore {
         public long uid;                    // IMAP UID
         public String messageId;            // SMTP Message-ID
         public String from;
-        public String to;
+        public String to;                   // To recipients
+        public String cc;                   // CC recipients (v2)
         public String subject;
         public String plaintext;            // Decrypted body
         public String threadId;
