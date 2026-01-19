@@ -430,6 +430,117 @@ public final class SmtpClient implements AutoCloseable {
     }
 
     /**
+     * Send an encrypted v2 message with attachments to multiple To/CC recipients.
+     * Uses MIME multipart with JSON payload and attachments.
+     *
+     * @param fromEmail sender email
+     * @param toEmails list of To recipients
+     * @param ccEmails list of CC recipients (can be null or empty)
+     * @param subject email subject
+     * @param encryptedMessage the v2 encrypted message with attachments
+     * @param inReplyTo Message-ID of message being replied to (null for new)
+     * @param references thread reference chain (null for new)
+     * @param threadId custom thread ID for correlation
+     * @return the Message-ID of the sent message
+     */
+    public String sendEncryptedMultiRecipientMessageWithAttachments(
+            String fromEmail,
+            List<String> toEmails,
+            List<String> ccEmails,
+            String subject,
+            CryptoBox.EncryptedMessageWithAttachmentsV2 encryptedMessage,
+            String inReplyTo, String references, String threadId) throws Exception {
+
+        if (toEmails == null || toEmails.isEmpty()) {
+            throw new IllegalArgumentException("At least one To recipient required");
+        }
+
+        CryptoBox.EncryptedPayloadV2 payload = encryptedMessage.textPayload();
+
+        MimeMessage msg = new MimeMessage(session);
+        msg.setFrom(new InternetAddress(fromEmail));
+
+        // Add To recipients
+        InternetAddress[] toAddresses = toEmails.stream()
+                .map(email -> {
+                    try { return new InternetAddress(email); }
+                    catch (Exception e) { throw new RuntimeException(e); }
+                })
+                .toArray(InternetAddress[]::new);
+        msg.setRecipients(Message.RecipientType.TO, toAddresses);
+
+        // Add CC recipients
+        if (ccEmails != null && !ccEmails.isEmpty()) {
+            InternetAddress[] ccAddresses = ccEmails.stream()
+                    .map(email -> {
+                        try { return new InternetAddress(email); }
+                        catch (Exception e) { throw new RuntimeException(e); }
+                    })
+                    .toArray(InternetAddress[]::new);
+            msg.setRecipients(Message.RecipientType.CC, ccAddresses);
+        }
+
+        msg.setSubject(subject, "UTF-8");
+        msg.setSentDate(new Date());
+
+        // Create multipart content with JSON payload
+        MimeMultipart multipart = new MimeMultipart("mixed");
+
+        // Part 1: Placeholder text body
+        MimeBodyPart textPart = new MimeBodyPart();
+        textPart.setText("Encrypted message with attachments (zke v2).", "UTF-8");
+        multipart.addBodyPart(textPart);
+
+        // Part 2: Encrypted payload as JSON attachment
+        MimeBodyPart payloadPart = new MimeBodyPart();
+        ObjectMapper mapper = new ObjectMapper();
+        String payloadJson = mapper.writeValueAsString(payload);
+
+        payloadPart.setDataHandler(new jakarta.activation.DataHandler(
+                payloadJson, "application/json; charset=UTF-8"));
+        payloadPart.setFileName("zkemails-payload.json");
+        payloadPart.setDisposition(MimeBodyPart.ATTACHMENT);
+        multipart.addBodyPart(payloadPart);
+
+        // Part 3: Encrypted attachments as JSON
+        if (encryptedMessage.attachments() != null && !encryptedMessage.attachments().isEmpty()) {
+            MimeBodyPart attachmentPart = new MimeBodyPart();
+            var container = new AttachmentContainer(1, encryptedMessage.attachments());
+            String attachmentsJson = mapper.writeValueAsString(container);
+
+            attachmentPart.setDataHandler(new jakarta.activation.DataHandler(
+                    attachmentsJson, "application/json; charset=UTF-8"));
+            attachmentPart.setFileName("attachments.zke");
+            attachmentPart.setDisposition(MimeBodyPart.ATTACHMENT);
+            multipart.addBodyPart(attachmentPart);
+        }
+
+        msg.setContent(multipart);
+
+        // Threading headers
+        if (inReplyTo != null && !inReplyTo.isBlank()) {
+            msg.setHeader("In-Reply-To", inReplyTo);
+        }
+        if (references != null && !references.isBlank()) {
+            msg.setHeader("References", references);
+        }
+        if (threadId != null && !threadId.isBlank()) {
+            msg.setHeader("X-ZKEmails-Thread-Id", threadId);
+        }
+
+        // V2 message headers
+        msg.setHeader("X-ZKEmails-Type", "msg");
+        msg.setHeader("X-ZKEmails-Version", "2");
+        msg.setHeader("X-ZKEmails-Enc", payload.enc());
+        msg.setHeader("X-ZKEmails-Sender-Fp", payload.senderFpHex());
+        msg.setHeader("X-ZKEmails-Has-Attachments", String.valueOf(encryptedMessage.attachments().size()));
+
+        msg.saveChanges();
+        Transport.send(msg);
+        return msg.getMessageID();
+    }
+
+    /**
      * Send an encrypted v2 message to a BCC recipient.
      * Creates a separate email that looks like it's only to the visible recipients
      * but actually goes only to the BCC recipient.

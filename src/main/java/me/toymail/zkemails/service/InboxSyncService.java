@@ -250,20 +250,32 @@ public class InboxSyncService {
                     : Instant.now().getEpochSecond();
             inboxMsg.syncedEpochSec = Instant.now().getEpochSecond();
 
-            // Check if message has attachments
+            // Check message version and attachments
+            Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(uid);
+            String version = first(hdrs, "X-ZKEmails-Version");
             boolean hasAttachments = imap.hasAttachments(uid);
-            log.debug("Processing UID {} - hasAttachments: {}", uid, hasAttachments);
+            int attachmentCount = imap.getAttachmentCount(uid);
+
+            System.out.println("[" + threadName + "] UID " + uid + " - version=" + version +
+                ", hasAttachments=" + hasAttachments + ", attachmentCount=" + attachmentCount);
+            log.debug("Processing UID {} - version={}, hasAttachments={}", uid, version, hasAttachments);
 
             if (hasAttachments) {
+                System.out.println("[" + threadName + "] UID " + uid + " - decrypting WITH attachments");
                 DecryptResult result = decryptMessageWithAttachments(imap, uid, msgSummary, threadId, cfg, myKeys);
                 if (result == null) {
+                    System.out.println("[" + threadName + "] UID " + uid + " - FAILED: decryption with attachments returned null");
                     return new SyncTaskResult(uid, false, "Decryption failed (with attachments)");
                 }
                 inboxMsg.plaintext = result.plaintext;
                 inboxMsg.attachments = result.attachments;
+                System.out.println("[" + threadName + "] UID " + uid + " - decrypted with " +
+                    (result.attachments != null ? result.attachments.size() : 0) + " attachments");
             } else {
+                System.out.println("[" + threadName + "] UID " + uid + " - decrypting WITHOUT attachments (version=" + version + ")");
                 String plaintext = decryptMessage(imap, msgSummary, cfg, myKeys);
                 if (plaintext == null) {
+                    System.out.println("[" + threadName + "] UID " + uid + " - FAILED: decryption returned null");
                     return new SyncTaskResult(uid, false, "Decryption failed");
                 }
                 inboxMsg.plaintext = plaintext;
@@ -491,20 +503,69 @@ public class InboxSyncService {
     /**
      * Decrypt a message that has attachments.
      * Uses decryptWithAttachments which properly verifies signature including attachment hash.
+     * Supports both V1 and V2 messages.
      */
     private DecryptResult decryptMessageWithAttachments(ImapClient imap, long uid, ImapClient.MailSummary msgSummary,
                                                          String threadId, Config cfg, IdentityKeys.KeyBundle myKeys) throws Exception {
+        System.out.println("  [decrypt] UID " + uid + " - fetching attachment container...");
+
         // Fetch attachment container
         ImapClient.AttachmentContainer container = imap.fetchAttachmentContainer(uid);
         if (container == null || container.attachments() == null) {
+            System.out.println("  [decrypt] UID " + uid + " - FAILED: no attachment container found");
             log.warn("Message {} has attachments header but no attachments found", uid);
             return null;
         }
 
+        System.out.println("  [decrypt] UID " + uid + " - found " + container.attachments().size() + " encrypted attachments");
         log.debug("Decrypting message with {} attachments for UID {}", container.attachments().size(), uid);
 
-        // Get encryption headers
+        // Get encryption headers to determine version
         Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(uid);
+        String version = first(hdrs, "X-ZKEmails-Version");
+
+        String fromEmail = extractEmail(msgSummary.from());
+        System.out.println("  [decrypt] UID " + uid + " - from: " + fromEmail + ", version: " + version);
+
+        ContactsStore.Contact contact = context.contacts().get(fromEmail);
+        if (contact == null || contact.ed25519PublicB64 == null) {
+            System.out.println("  [decrypt] UID " + uid + " - FAILED: no contact/keys for sender: " + fromEmail);
+            log.debug("No contact found for sender: {}", fromEmail);
+            return null;
+        }
+        System.out.println("  [decrypt] UID " + uid + " - contact found with fingerprint: " + contact.fingerprintHex);
+
+        // V2 message with attachments
+        if ("2".equals(version)) {
+            System.out.println("  [decrypt] UID " + uid + " - using V2 decryption with attachments");
+            try {
+                return decryptV2MessageWithAttachments(imap, uid, msgSummary, threadId, hdrs, cfg, myKeys, contact, container.attachments());
+            } catch (Exception e) {
+                System.out.println("  [decrypt] UID " + uid + " - V2 decryption EXCEPTION: " + e.getMessage());
+                e.printStackTrace();
+                throw e;
+            }
+        }
+
+        // V1 header-based message with attachments
+        System.out.println("  [decrypt] UID " + uid + " - using V1 decryption with attachments");
+        try {
+            return decryptV1MessageWithAttachments(msgSummary, threadId, hdrs, cfg, myKeys, fromEmail, contact, container.attachments());
+        } catch (Exception e) {
+            System.out.println("  [decrypt] UID " + uid + " - V1 decryption EXCEPTION: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    /**
+     * Decrypt a V1 header-based message with attachments.
+     */
+    private DecryptResult decryptV1MessageWithAttachments(ImapClient.MailSummary msgSummary, String threadId,
+                                                           Map<String, List<String>> hdrs, Config cfg,
+                                                           IdentityKeys.KeyBundle myKeys, String fromEmail,
+                                                           ContactsStore.Contact contact,
+                                                           List<CryptoBox.EncryptedAttachment> encryptedAttachments) throws Exception {
         String ephemX25519PubB64 = first(hdrs, "X-ZKEmails-Ephem-X25519");
         String wrappedKeyB64 = first(hdrs, "X-ZKEmails-WrappedKey");
         String wrappedKeyNonceB64 = first(hdrs, "X-ZKEmails-WrappedKey-Nonce");
@@ -512,13 +573,6 @@ public class InboxSyncService {
         String ciphertextB64 = first(hdrs, "X-ZKEmails-Ciphertext");
         String sigB64 = first(hdrs, "X-ZKEmails-Sig");
         String recipientFpHex = first(hdrs, "X-ZKEmails-Recipient-Fp");
-
-        String fromEmail = extractEmail(msgSummary.from());
-        ContactsStore.Contact contact = context.contacts().get(fromEmail);
-        if (contact == null || contact.ed25519PublicB64 == null) {
-            log.debug("No contact found for sender: {}", fromEmail);
-            return null;
-        }
 
         CryptoBox.EncryptedPayload payload = new CryptoBox.EncryptedPayload(
                 ephemX25519PubB64, wrappedKeyB64, wrappedKeyNonceB64,
@@ -531,12 +585,75 @@ public class InboxSyncService {
                 cfg.email,
                 msgSummary.subject(),
                 payload,
-                container.attachments(),
+                encryptedAttachments,
                 myKeys.x25519PrivateB64(),
                 contact.ed25519PublicB64
         );
 
-        // Save each decrypted attachment to disk
+        return saveDecryptedAttachments(result, threadId, msgSummary.uid());
+    }
+
+    /**
+     * Decrypt a V2 multi-recipient message with attachments.
+     */
+    private DecryptResult decryptV2MessageWithAttachments(ImapClient imap, long uid, ImapClient.MailSummary msgSummary,
+                                                           String threadId, Map<String, List<String>> hdrs, Config cfg,
+                                                           IdentityKeys.KeyBundle myKeys, ContactsStore.Contact contact,
+                                                           List<CryptoBox.EncryptedAttachment> encryptedAttachments) throws Exception {
+        System.out.println("    [V2] UID " + uid + " - fetching JSON payload...");
+
+        // Fetch the JSON payload from MIME multipart
+        CryptoBox.EncryptedPayloadV2 payload = imap.fetchJsonPayload(uid);
+        if (payload == null) {
+            System.out.println("    [V2] UID " + uid + " - FAILED: no JSON payload found");
+            log.debug("Failed to fetch v2 JSON payload for UID {}", uid);
+            return null;
+        }
+
+        System.out.println("    [V2] UID " + uid + " - payload has " + payload.recipients().size() + " recipients");
+        log.debug("Fetched v2 payload with {} recipients for UID {} (with attachments)", payload.recipients().size(), uid);
+
+        // Get my fingerprint from keys
+        String myFpHex = myKeys.fingerprintHex();
+        System.out.println("    [V2] UID " + uid + " - my fingerprint: " + myFpHex);
+
+        // Check if I'm a recipient
+        boolean foundMyKey = payload.recipients().stream()
+                .anyMatch(r -> r.fpHex().equals(myFpHex));
+        System.out.println("    [V2] UID " + uid + " - am I a recipient? " + foundMyKey);
+        for (var rk : payload.recipients()) {
+            System.out.println("    [V2] UID " + uid + " - recipient fp: " + rk.fpHex());
+        }
+
+        // Extract primary To recipient from message headers for AAD binding
+        String toHeader = first(hdrs, "To");
+        String primaryTo = toHeader != null ? extractEmail(toHeader.split(",")[0]) : cfg.email;
+        System.out.println("    [V2] UID " + uid + " - primaryTo for AAD: " + primaryTo);
+
+        String fromEmail = extractEmail(msgSummary.from());
+        System.out.println("    [V2] UID " + uid + " - calling CryptoBox.decryptFromMultipleRecipientMessageWithAttachments...");
+
+        // Decrypt with attachments (this verifies signature including attachment hash)
+        CryptoBox.DecryptedMessageWithAttachments result = CryptoBox.decryptFromMultipleRecipientMessageWithAttachments(
+                fromEmail,
+                primaryTo,
+                msgSummary.subject(),
+                payload,
+                encryptedAttachments,
+                myFpHex,
+                myKeys.x25519PrivateB64(),
+                contact.ed25519PublicB64
+        );
+
+        System.out.println("    [V2] UID " + uid + " - decryption successful!");
+        return saveDecryptedAttachments(result, threadId, uid);
+    }
+
+    /**
+     * Save decrypted attachments to disk and return metadata.
+     */
+    private DecryptResult saveDecryptedAttachments(CryptoBox.DecryptedMessageWithAttachments result,
+                                                    String threadId, long uid) throws IOException {
         List<InboxStore.AttachmentMeta> metas = new ArrayList<>();
         if (result.attachments() != null) {
             for (var decryptedAtt : result.attachments()) {

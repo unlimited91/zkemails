@@ -186,19 +186,17 @@ public final class SendMessageCmd implements Runnable {
 
             // Send the message
             if (isMultiRecipient) {
-                // Use v2 multi-recipient send
+                // Use v2 multi-recipient send (with attachments if any)
                 MessageService msgService = new MessageService(context);
                 MessageService.MultiRecipientInput recipients = new MessageService.MultiRecipientInput(
                     toEmails, ccEmails, bccEmails
                 );
 
-                // Note: attachments not yet supported for multi-recipient v2 - log warning
-                if (!attachmentInputs.isEmpty()) {
-                    log.warn("Attachments with multi-recipient send not yet supported. Sending without attachments.");
-                }
+                // Convert attachment paths for the service method
+                List<Path> attachmentPaths = attachments != null ? attachments : List.of();
 
-                MessageService.MultiSendResult result = msgService.sendMultiRecipientMessage(
-                    resolvedPassword, recipients, messageSubject, messageBody, null, null, null
+                MessageService.MultiSendResult result = msgService.sendMultiRecipientMessageWithAttachments(
+                    resolvedPassword, recipients, messageSubject, messageBody, attachmentPaths, null, null, null
                 );
 
                 if (result.success()) {

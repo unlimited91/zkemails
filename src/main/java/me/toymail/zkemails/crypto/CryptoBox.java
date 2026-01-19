@@ -602,6 +602,239 @@ public final class CryptoBox {
         );
     }
 
+    // ==================== V2 Multi-Recipient Encryption with Attachments ====================
+
+    /**
+     * Result of encrypting a V2 multi-recipient message with attachments.
+     */
+    public record EncryptedMessageWithAttachmentsV2(
+            EncryptedPayloadV2 textPayload,
+            List<EncryptedAttachment> attachments
+    ) {}
+
+    /**
+     * Encrypt a message with attachments to multiple recipients.
+     * Uses a shared ciphertext and attachments with per-recipient wrapped keys.
+     *
+     * @param fromEmail sender email (for AAD)
+     * @param primaryToEmail primary recipient email (for AAD binding)
+     * @param subject email subject (for AAD)
+     * @param plaintext message content
+     * @param attachments list of attachments to encrypt
+     * @param senderKeys sender's key bundle for signing
+     * @param recipientKeys map of recipient fingerprint -> X25519 public key (base64)
+     * @return EncryptedMessageWithAttachmentsV2 with shared ciphertext, attachments, and per-recipient wrapped keys
+     */
+    public static EncryptedMessageWithAttachmentsV2 encryptToMultipleRecipientsWithAttachments(
+            String fromEmail, String primaryToEmail, String subject,
+            String plaintext,
+            List<AttachmentInput> attachments,
+            IdentityKeys.KeyBundle senderKeys,
+            Map<String, String> recipientKeys) throws Exception {
+
+        if (recipientKeys == null || recipientKeys.isEmpty()) {
+            throw new IllegalArgumentException("At least one recipient required");
+        }
+
+        // Generate random message key and encrypt plaintext
+        byte[] msgKey = rand(32);
+        byte[] msgNonce = rand(12);
+        byte[] ct = aesGcmEncrypt(msgKey, msgNonce, aad(fromEmail, primaryToEmail, subject),
+                plaintext.getBytes(StandardCharsets.UTF_8));
+
+        // Encrypt each attachment with the message key
+        List<EncryptedAttachment> encryptedAttachments = new ArrayList<>();
+        if (attachments != null) {
+            for (AttachmentInput att : attachments) {
+                EncryptedAttachment encAtt = encryptAttachment(att.data(), att.filename(), att.contentType(), msgKey);
+                encryptedAttachments.add(encAtt);
+            }
+        }
+
+        // Generate ONE shared ephemeral X25519 key pair
+        KeyPair ephem = x25519KeyPair();
+        byte[] ephemPubEncoded = ephem.getPublic().getEncoded();
+
+        // Wrap message key for each recipient
+        List<RecipientKey> recipientKeyList = new ArrayList<>();
+        for (Map.Entry<String, String> entry : recipientKeys.entrySet()) {
+            String recipientFpHex = entry.getKey();
+            String recipientX25519PubB64 = entry.getValue();
+
+            PublicKey recipientPub = KeyFactory.getInstance("X25519", "BC")
+                    .generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(recipientX25519PubB64)));
+
+            byte[] shared = x25519SharedSecret(ephem.getPrivate(), recipientPub);
+
+            // Per-recipient HKDF salt using their fingerprint
+            byte[] salt = sha256(("zkemails-wrap:" + recipientFpHex).getBytes(StandardCharsets.UTF_8));
+            byte[] wrapKey = hkdfSha256(shared, salt, "wrap-key".getBytes(StandardCharsets.UTF_8), 32);
+
+            byte[] wrapNonce = rand(12);
+            byte[] wrapped = aesGcmEncrypt(wrapKey, wrapNonce, null, msgKey);
+
+            recipientKeyList.add(new RecipientKey(
+                    recipientFpHex,
+                    Base64.getEncoder().encodeToString(wrapped),
+                    Base64.getEncoder().encodeToString(wrapNonce)
+            ));
+        }
+
+        // Build signature input (includes all recipient fingerprints and attachment hash)
+        byte[] attachmentHash = computeAttachmentHash(encryptedAttachments);
+        byte[] toSign = buildSignatureInputV2WithAttachments(
+                ephemPubEncoded,
+                msgNonce,
+                ct,
+                aad(fromEmail, primaryToEmail, subject),
+                recipientKeyList,
+                attachmentHash
+        );
+        byte[] sig = ed25519Sign(senderKeys.ed25519PrivateB64(), toSign);
+
+        EncryptedPayloadV2 textPayload = new EncryptedPayloadV2(
+                2,
+                "x25519+hkdf+aesgcm;sig=ed25519",
+                senderKeys.fingerprintHex(),
+                Base64.getEncoder().encodeToString(ephemPubEncoded),
+                Base64.getEncoder().encodeToString(msgNonce),
+                Base64.getEncoder().encodeToString(ct),
+                Base64.getEncoder().encodeToString(sig),
+                recipientKeyList
+        );
+
+        return new EncryptedMessageWithAttachmentsV2(textPayload, encryptedAttachments);
+    }
+
+    /**
+     * Decrypt a V2 multi-recipient message with attachments.
+     *
+     * @param fromEmail sender email (for AAD)
+     * @param primaryToEmail primary recipient email (for AAD)
+     * @param subject email subject (for AAD)
+     * @param payload the encrypted v2 payload
+     * @param encryptedAttachments list of encrypted attachments
+     * @param myFpHex recipient's fingerprint (to find their wrapped key)
+     * @param myX25519PrivB64 recipient's X25519 private key (base64)
+     * @param senderEd25519PubB64 sender's Ed25519 public key for signature verification
+     * @return decrypted message with attachments
+     */
+    public static DecryptedMessageWithAttachments decryptFromMultipleRecipientMessageWithAttachments(
+            String fromEmail, String primaryToEmail, String subject,
+            EncryptedPayloadV2 payload,
+            List<EncryptedAttachment> encryptedAttachments,
+            String myFpHex,
+            String myX25519PrivB64,
+            String senderEd25519PubB64) throws Exception {
+
+        // Find my wrapped key
+        RecipientKey myKey = null;
+        for (RecipientKey rk : payload.recipients()) {
+            if (rk.fpHex().equals(myFpHex)) {
+                myKey = rk;
+                break;
+            }
+        }
+        if (myKey == null) {
+            throw new SecurityException("Message not encrypted for this recipient: " + myFpHex);
+        }
+
+        // Verify signature (includes all recipient FPs and attachment hash)
+        byte[] ephemPubBytes = Base64.getDecoder().decode(payload.ephemX25519PubB64());
+        byte[] msgNonce = Base64.getDecoder().decode(payload.msgNonceB64());
+        byte[] ct = Base64.getDecoder().decode(payload.ciphertextB64());
+
+        byte[] attachmentHash = computeAttachmentHash(encryptedAttachments != null ? encryptedAttachments : List.of());
+        byte[] toVerify = buildSignatureInputV2WithAttachments(
+                ephemPubBytes,
+                msgNonce,
+                ct,
+                aad(fromEmail, primaryToEmail, subject),
+                payload.recipients(),
+                attachmentHash
+        );
+        byte[] sig = Base64.getDecoder().decode(payload.sigB64());
+        if (!ed25519Verify(senderEd25519PubB64, toVerify, sig)) {
+            throw new SecurityException("Signature verification failed");
+        }
+
+        // Unwrap message key
+        PublicKey ephemPub = KeyFactory.getInstance("X25519", "BC")
+                .generatePublic(new X509EncodedKeySpec(ephemPubBytes));
+
+        PrivateKey myPriv = KeyFactory.getInstance("X25519", "BC")
+                .generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(myX25519PrivB64)));
+
+        byte[] shared = x25519SharedSecret(myPriv, ephemPub);
+
+        byte[] salt = sha256(("zkemails-wrap:" + myFpHex).getBytes(StandardCharsets.UTF_8));
+        byte[] wrapKey = hkdfSha256(shared, salt, "wrap-key".getBytes(StandardCharsets.UTF_8), 32);
+
+        byte[] msgKey = aesGcmDecrypt(
+                wrapKey,
+                Base64.getDecoder().decode(myKey.wrappedKeyNonceB64()),
+                null,
+                Base64.getDecoder().decode(myKey.wrappedKeyB64())
+        );
+
+        // Decrypt message
+        byte[] pt = aesGcmDecrypt(msgKey, msgNonce, aad(fromEmail, primaryToEmail, subject), ct);
+        String plaintext = new String(pt, StandardCharsets.UTF_8);
+
+        // Decrypt attachments
+        List<DecryptedAttachment> decryptedAttachments = new ArrayList<>();
+        if (encryptedAttachments != null) {
+            for (EncryptedAttachment encAtt : encryptedAttachments) {
+                byte[] attData = decryptAttachment(encAtt, msgKey);
+                decryptedAttachments.add(new DecryptedAttachment(
+                        encAtt.filename(),
+                        encAtt.contentType(),
+                        encAtt.originalSize(),
+                        attData
+                ));
+            }
+        }
+
+        return new DecryptedMessageWithAttachments(plaintext, decryptedAttachments);
+    }
+
+    /**
+     * Build canonical bytes for v2 signature with attachments.
+     * Includes all recipient fingerprints and attachment hash.
+     */
+    private static byte[] buildSignatureInputV2WithAttachments(
+            byte[] ephemPubEncoded,
+            byte[] msgNonce,
+            byte[] ciphertext,
+            byte[] aad,
+            List<RecipientKey> recipients,
+            byte[] attachmentHash) throws Exception {
+
+        // Build deterministic recipient data (sorted by fingerprint for consistency)
+        List<RecipientKey> sorted = new ArrayList<>(recipients);
+        sorted.sort((a, b) -> a.fpHex().compareTo(b.fpHex()));
+
+        List<byte[]> parts = new ArrayList<>();
+        parts.add(ephemPubEncoded);
+        parts.add(msgNonce);
+        parts.add(ciphertext);
+        parts.add(aad);
+
+        // Include each recipient's fingerprint and wrapped key data
+        for (RecipientKey rk : sorted) {
+            parts.add(rk.fpHex().getBytes(StandardCharsets.UTF_8));
+            parts.add(Base64.getDecoder().decode(rk.wrappedKeyB64()));
+            parts.add(Base64.getDecoder().decode(rk.wrappedKeyNonceB64()));
+        }
+
+        // Include attachment hash for integrity
+        if (attachmentHash != null && attachmentHash.length > 0) {
+            parts.add(attachmentHash);
+        }
+
+        return concat(parts.toArray(new byte[0][]));
+    }
+
     /**
      * Compute hash of encrypted attachments for signature integrity.
      */
