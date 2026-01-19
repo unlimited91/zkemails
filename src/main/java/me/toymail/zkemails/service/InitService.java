@@ -10,6 +10,7 @@ import me.toymail.zkemails.store.ZkStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 /**
  * Service for account initialization.
@@ -30,10 +31,15 @@ public final class InitService {
         String imapHost,
         int imapPort,
         String smtpHost,
-        int smtpPort
+        int smtpPort,
+        String imapFolder
     ) {
         public static InitConfig forGmail(String email, String password) {
-            return new InitConfig(email, password, "imap.gmail.com", 993, "smtp.gmail.com", 587);
+            return new InitConfig(email, password, "imap.gmail.com", 993, "smtp.gmail.com", 587, "INBOX");
+        }
+
+        public static InitConfig forGmail(String email, String password, String folder) {
+            return new InitConfig(email, password, "imap.gmail.com", 993, "smtp.gmail.com", 587, folder);
         }
     }
 
@@ -94,6 +100,7 @@ public final class InitService {
         cfg.imap.port = config.imapPort();
         cfg.imap.ssl = true;
         cfg.imap.username = config.email();
+        cfg.imap.folder = config.imapFolder() != null ? config.imapFolder() : "INBOX";
         cfg.smtp.host = config.smtpHost();
         cfg.smtp.port = config.smtpPort();
         cfg.smtp.username = config.email();
@@ -157,5 +164,56 @@ public final class InitService {
      */
     public boolean isKeychainAvailable() {
         return context.credentials().isAvailable();
+    }
+
+    /**
+     * List available IMAP folders.
+     *
+     * @param email the email address
+     * @param password the password
+     * @param imapHost the IMAP host
+     * @param imapPort the IMAP port
+     * @return list of folder names
+     * @throws Exception if connection fails
+     */
+    public List<String> listImapFolders(String email, String password, String imapHost, int imapPort) throws Exception {
+        ImapClient.ImapConfig imapConfig = new ImapClient.ImapConfig(imapHost, imapPort, true, email, password);
+        return ImapClient.listAvailableFolders(imapConfig);
+    }
+
+    /**
+     * Update the IMAP folder for an existing profile.
+     *
+     * @param email the profile email
+     * @param folder the new folder name
+     * @throws Exception if update fails
+     */
+    public void updateImapFolder(String email, String folder) throws Exception {
+        ZkStore store = new ZkStore(email);
+        Config cfg = store.readJson("config.json", Config.class);
+        if (cfg == null) {
+            throw new IllegalStateException("Profile not initialized: " + email);
+        }
+        cfg.imap.folder = folder;
+        store.writeJson("config.json", cfg);
+    }
+
+    /**
+     * Get the current IMAP folder for a profile.
+     *
+     * @param email the profile email
+     * @return the folder name, or "INBOX" if not set
+     */
+    public String getImapFolder(String email) {
+        try {
+            ZkStore store = new ZkStore(email);
+            Config cfg = store.readJson("config.json", Config.class);
+            if (cfg != null && cfg.imap.folder != null) {
+                return cfg.imap.folder;
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        return "INBOX";
     }
 }

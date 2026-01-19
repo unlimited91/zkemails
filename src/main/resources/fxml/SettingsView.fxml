@@ -35,6 +35,12 @@
                     <Label fx:id="keychainStatusLabel" text="-"/>
                     <Button text="Delete Saved Password" onAction="#deleteCredential" styleClass="button-danger"/>
                 </HBox>
+
+                <Label text="IMAP Folder:" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
+                <HBox spacing="10" alignment="CENTER_LEFT" GridPane.rowIndex="3" GridPane.columnIndex="1">
+                    <Label fx:id="currentFolderLabel" text="-" style="-fx-font-weight: bold;"/>
+                    <Button fx:id="changeFolderButton" text="Change..." onAction="#showFolderDialog"/>
+                </HBox>
             </GridPane>
         </VBox>
 
@@ -71,6 +77,13 @@
 
                 <Label text="SMTP Port:" GridPane.rowIndex="5" GridPane.columnIndex="0"/>
                 <TextField fx:id="smtpPortField" GridPane.rowIndex="5" GridPane.columnIndex="1"/>
+
+                <Label text="IMAP Folder:" GridPane.rowIndex="6" GridPane.columnIndex="0"/>
+                <HBox spacing="10" alignment="CENTER_LEFT" GridPane.rowIndex="6" GridPane.columnIndex="1">
+                    <ComboBox fx:id="folderComboBox" promptText="INBOX" prefWidth="250" disable="true"/>
+                    <Button fx:id="fetchFoldersButton" text="Fetch Folders" onAction="#fetchFolders"/>
+                    <ProgressIndicator fx:id="folderLoadingIndicator" prefWidth="20" prefHeight="20" visible="false"/>
+                </HBox>
             </GridPane>
 
             <CheckBox fx:id="savePasswordCheck" text="Save password to system keychain" selected="true"/>

@@ -123,6 +123,88 @@ public final class ImapClient implements AutoCloseable {
         throw new MessagingException("Could not find sent folder. Tried: " + String.join(", ", SENT_FOLDER_NAMES));
     }
 
+    /**
+     * List all available folders from the IMAP server.
+     * Connects temporarily to enumerate folders, then disconnects.
+     *
+     * @param cfg IMAP configuration
+     * @return List of folder names (full paths like "[Gmail]/All Mail")
+     */
+    public static List<String> listAvailableFolders(ImapConfig cfg) throws MessagingException {
+        Properties props = new Properties();
+        props.put("mail.store.protocol", cfg.ssl() ? "imaps" : "imap");
+        props.put("mail.imaps.ssl.enable", String.valueOf(cfg.ssl()));
+        props.put("mail.imaps.ssl.checkserveridentity", "true");
+        props.put("mail.imaps.connectiontimeout", "15000");
+        props.put("mail.imaps.timeout", "30000");
+
+        Session session = Session.getInstance(props);
+        Store store = session.getStore(cfg.ssl() ? "imaps" : "imap");
+
+        try {
+            store.connect(cfg.host(), cfg.port(), cfg.username(), cfg.password());
+            log.info("Connected to list folders");
+
+            List<String> folderNames = new ArrayList<>();
+            Folder defaultFolder = store.getDefaultFolder();
+
+            // Recursively list all folders
+            listFoldersRecursive(defaultFolder, folderNames);
+
+            // Sort alphabetically, but put INBOX first
+            folderNames.sort((a, b) -> {
+                if ("INBOX".equalsIgnoreCase(a)) return -1;
+                if ("INBOX".equalsIgnoreCase(b)) return 1;
+                return a.compareToIgnoreCase(b);
+            });
+
+            log.info("Found {} folders", folderNames.size());
+            return folderNames;
+
+        } finally {
+            if (store.isConnected()) {
+                store.close();
+            }
+        }
+    }
+
+    /**
+     * Recursively list folders and subfolders.
+     */
+    private static void listFoldersRecursive(Folder parent, List<String> result) throws MessagingException {
+        Folder[] folders = parent.list();
+        for (Folder folder : folders) {
+            String fullName = folder.getFullName();
+
+            // Check if folder can hold messages (not just a container)
+            int type = folder.getType();
+            if ((type & Folder.HOLDS_MESSAGES) != 0) {
+                // Skip system folders that aren't useful for reading
+                if (!isSystemFolder(fullName)) {
+                    result.add(fullName);
+                }
+            }
+
+            // Recurse into subfolders if it can hold folders
+            if ((type & Folder.HOLDS_FOLDERS) != 0) {
+                listFoldersRecursive(folder, result);
+            }
+        }
+    }
+
+    /**
+     * Check if a folder is a system folder that shouldn't be shown for selection.
+     */
+    private static boolean isSystemFolder(String folderName) {
+        String lower = folderName.toLowerCase();
+        return lower.contains("/spam") ||
+               lower.contains("/trash") ||
+               lower.contains("/drafts") ||
+               lower.equals("[gmail]/all mail") ||
+               lower.equals("[gmail]/important") ||
+               lower.equals("[gmail]/starred");
+    }
+
     @Override
     public void close() throws MessagingException {
         if (inbox != null && inbox.isOpen()) inbox.close(false);

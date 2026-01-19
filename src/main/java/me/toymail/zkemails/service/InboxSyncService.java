@@ -112,7 +112,11 @@ public class InboxSyncService {
         InboxStore.InboxIndex index = context.inboxStore().loadIndex();
         long checkpoint = index.lastSyncEpochSec;
 
+        // Get folder from config (defaults to INBOX for backward compatibility)
+        String folder = cfg.imap.folder != null ? cfg.imap.folder : "INBOX";
+
         System.out.println("\n=== Checkpoint Debug ===");
+        System.out.println("IMAP Folder: " + folder);
         System.out.println("lastSyncEpochSec from index: " + checkpoint);
         if (checkpoint > 0) {
             System.out.println("Checkpoint date: " + new java.util.Date(checkpoint * 1000));
@@ -121,7 +125,7 @@ public class InboxSyncService {
             System.out.println("No checkpoint set, will use 30-day window");
         }
 
-        ImapClient imap = ImapConnectionPool.getInstance().getConnection(imapConfig);
+        ImapClient imap = ImapConnectionPool.getInstance().getConnection(imapConfig, folder);
         try {
             // 1. Search IMAP with checkpoint filter (reduces server-side results)
             List<ImapClient.MailSummary> imapMsgs = imap.searchHeaderEqualsSince(
@@ -159,9 +163,10 @@ public class InboxSyncService {
 
             // 4. Fetch, decrypt, and save messages in parallel
             List<Long> uidList = new ArrayList<>(newUids);
+            final String syncFolder = folder; // Capture for lambda
             List<CompletableFuture<SyncTaskResult>> futures = uidList.stream()
                     .map(uid -> CompletableFuture.supplyAsync(
-                            () -> processSingleMessage(uid, imapMsgMap.get(uid), imapConfig, cfg, myKeys),
+                            () -> processSingleMessage(uid, imapMsgMap.get(uid), imapConfig, syncFolder, cfg, myKeys),
                             fetchPool))
                     .toList();
 
@@ -202,7 +207,7 @@ public class InboxSyncService {
      * Each task creates its own IMAP connection for thread safety.
      */
     private SyncTaskResult processSingleMessage(long uid, ImapClient.MailSummary cachedSummary,
-                                                  ImapClient.ImapConfig imapConfig,
+                                                  ImapClient.ImapConfig imapConfig, String folder,
                                                   Config cfg, IdentityKeys.KeyBundle myKeys) {
         String threadName = Thread.currentThread().getName();
         log.info("[{}] Starting to process message UID {}", threadName, uid);
@@ -211,7 +216,7 @@ public class InboxSyncService {
         ImapClient imap = null;
         try {
             // Create fresh connection for this task (Folder is not thread-safe)
-            imap = ImapConnectionPool.getInstance().createFreshConnection(imapConfig);
+            imap = ImapConnectionPool.getInstance().createFreshConnection(imapConfig, folder);
             System.out.println("[" + threadName + "] IMAP connection established for UID " + uid);
 
             ImapClient.MailSummary msgSummary = cachedSummary;
@@ -319,11 +324,14 @@ public class InboxSyncService {
         ImapClient.ImapConfig imapConfig = new ImapClient.ImapConfig(
                 cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password);
 
+        // Get folder from config (defaults to INBOX for backward compatibility)
+        String folder = cfg.imap.folder != null ? cfg.imap.folder : "INBOX";
+
         // Get checkpoint from last sync
         InboxStore.InboxIndex index = context.inboxStore().loadIndex();
         long checkpoint = index.lastSyncEpochSec;
 
-        ImapClient imap = ImapConnectionPool.getInstance().getConnection(imapConfig);
+        ImapClient imap = ImapConnectionPool.getInstance().getConnection(imapConfig, folder);
         try {
             List<ImapClient.MailSummary> imapMsgs = imap.searchHeaderEqualsSince(
                     "X-ZKEmails-Type", "msg", checkpoint, 1000);

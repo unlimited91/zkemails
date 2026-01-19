@@ -1,5 +1,6 @@
 package me.toymail.zkemails.gui.controller;
 
+import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
@@ -7,6 +8,9 @@ import javafx.scene.layout.VBox;
 import me.toymail.zkemails.gui.util.TaskRunner;
 import me.toymail.zkemails.service.InitService;
 import me.toymail.zkemails.service.ServiceContext;
+
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Controller for the settings view.
@@ -29,6 +33,13 @@ public class SettingsController {
     @FXML private Label activeProfileLabel;
     @FXML private Label fingerprintLabel;
     @FXML private Label keychainStatusLabel;
+    @FXML private Label currentFolderLabel;
+    @FXML private Button changeFolderButton;
+
+    // Folder selection for new profile
+    @FXML private ComboBox<String> folderComboBox;
+    @FXML private Button fetchFoldersButton;
+    @FXML private ProgressIndicator folderLoadingIndicator;
 
     @FXML private Label statusLabel;
 
@@ -45,6 +56,10 @@ public class SettingsController {
         smtpHostField.setText("smtp.gmail.com");
         smtpPortField.setText("587");
 
+        // Initialize folder combobox with INBOX as default
+        folderComboBox.setItems(FXCollections.observableArrayList("INBOX"));
+        folderComboBox.setValue("INBOX");
+
         // Check if profiles exist
         loadProfileInfo();
     }
@@ -54,7 +69,8 @@ public class SettingsController {
             boolean hasProfiles = services.profiles().hasProfiles();
             String activeProfile = services.profiles().getActiveProfile();
             boolean keychainAvailable = services.credentials().isKeychainAvailable();
-            return new ProfileInfo(hasProfiles, activeProfile, keychainAvailable);
+            String currentFolder = activeProfile != null ? services.init().getImapFolder(activeProfile) : "INBOX";
+            return new ProfileInfo(hasProfiles, activeProfile, keychainAvailable, currentFolder);
         }, new TaskRunner.TaskCallback<>() {
             @Override
             public void onSuccess(ProfileInfo info) {
@@ -64,6 +80,9 @@ public class SettingsController {
 
                     // Load fingerprint
                     loadFingerprint();
+
+                    // Show current folder
+                    currentFolderLabel.setText(info.currentFolder);
 
                     if (info.keychainAvailable) {
                         boolean hasPassword = services.credentials().hasStoredPassword(info.activeProfile);
@@ -128,8 +147,13 @@ public class SettingsController {
         mainController.showProgress(true);
         mainController.setStatus("Testing connection...");
 
+        String selectedFolder = folderComboBox.getValue();
+        if (selectedFolder == null || selectedFolder.isBlank()) {
+            selectedFolder = "INBOX";
+        }
+
         InitService.InitConfig config = new InitService.InitConfig(
-            email, password, imapHost, imapPort, smtpHost, smtpPort
+            email, password, imapHost, imapPort, smtpHost, smtpPort, selectedFolder
         );
 
         TaskRunner.run("Initializing profile", () -> services.init().initializeWithValidation(config),
@@ -200,5 +224,129 @@ public class SettingsController {
         }
     }
 
-    private record ProfileInfo(boolean hasProfiles, String activeProfile, boolean keychainAvailable) {}
+    private record ProfileInfo(boolean hasProfiles, String activeProfile, boolean keychainAvailable, String currentFolder) {}
+
+    /**
+     * Fetch available folders from IMAP server.
+     */
+    @FXML
+    public void fetchFolders() {
+        String email = emailField.getText();
+        String password = passwordField.getText();
+        String imapHost = imapHostField.getText();
+
+        if (email == null || email.isBlank() || password == null || password.isBlank()) {
+            mainController.showError("Validation Error", "Please enter email and password first");
+            return;
+        }
+
+        int imapPort;
+        try {
+            imapPort = Integer.parseInt(imapPortField.getText());
+        } catch (NumberFormatException e) {
+            mainController.showError("Validation Error", "Invalid IMAP port");
+            return;
+        }
+
+        fetchFoldersButton.setDisable(true);
+        folderLoadingIndicator.setVisible(true);
+        statusLabel.setText("Fetching folders...");
+
+        TaskRunner.run("Fetching folders", () -> services.init().listImapFolders(email, password, imapHost, imapPort),
+            new TaskRunner.TaskCallback<>() {
+                @Override
+                public void onSuccess(List<String> folders) {
+                    fetchFoldersButton.setDisable(false);
+                    folderLoadingIndicator.setVisible(false);
+                    statusLabel.setText("Found " + folders.size() + " folders");
+
+                    folderComboBox.setItems(FXCollections.observableArrayList(folders));
+                    folderComboBox.setDisable(false);
+
+                    // Select INBOX by default if available
+                    if (folders.contains("INBOX")) {
+                        folderComboBox.setValue("INBOX");
+                    } else if (!folders.isEmpty()) {
+                        folderComboBox.setValue(folders.get(0));
+                    }
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    fetchFoldersButton.setDisable(false);
+                    folderLoadingIndicator.setVisible(false);
+                    statusLabel.setText("Failed to fetch folders");
+                    mainController.showError("Connection Error", "Could not fetch folders: " + error.getMessage());
+                }
+            });
+    }
+
+    /**
+     * Show dialog to change folder for existing profile.
+     */
+    @FXML
+    public void showFolderDialog() {
+        String activeProfile = activeProfileLabel.getText();
+        if (activeProfile == null || activeProfile.equals("-")) {
+            mainController.showError("Error", "No active profile");
+            return;
+        }
+
+        // Get password from keychain or prompt
+        String password = mainController.getPassword();
+        if (password == null || password.isBlank()) {
+            mainController.showError("Error", "Please enter your password first (use the password field in Messages view)");
+            return;
+        }
+
+        // Show loading
+        changeFolderButton.setDisable(true);
+        mainController.setStatus("Fetching folders...");
+
+        TaskRunner.run("Fetching folders", () -> {
+            var store = services.storeContext().zkStore();
+            var cfg = store.readJson("config.json", me.toymail.zkemails.store.Config.class);
+            return services.init().listImapFolders(cfg.email, password, cfg.imap.host, cfg.imap.port);
+        }, new TaskRunner.TaskCallback<>() {
+            @Override
+            public void onSuccess(List<String> folders) {
+                changeFolderButton.setDisable(false);
+                mainController.setStatus("");
+
+                // Show choice dialog
+                ChoiceDialog<String> dialog = new ChoiceDialog<>(currentFolderLabel.getText(), folders);
+                dialog.setTitle("Select IMAP Folder");
+                dialog.setHeaderText("Choose the folder to read encrypted messages from");
+                dialog.setContentText("Folder:");
+
+                Optional<String> result = dialog.showAndWait();
+                result.ifPresent(selectedFolder -> {
+                    // Update folder in config
+                    TaskRunner.run("Updating folder", () -> {
+                        services.init().updateImapFolder(activeProfile, selectedFolder);
+                        return selectedFolder;
+                    }, new TaskRunner.TaskCallback<>() {
+                        @Override
+                        public void onSuccess(String folder) {
+                            currentFolderLabel.setText(folder);
+                            mainController.showInfo("Success", "IMAP folder changed to: " + folder +
+                                "\n\nRestart the application for changes to take effect.");
+                        }
+
+                        @Override
+                        public void onError(Throwable error) {
+                            mainController.showError("Error", "Failed to update folder: " + error.getMessage());
+                        }
+                    });
+                });
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                changeFolderButton.setDisable(false);
+                mainController.setStatus("");
+                mainController.showError("Connection Error", "Could not fetch folders: " + error.getMessage());
+            }
+        });
+    }
 }
