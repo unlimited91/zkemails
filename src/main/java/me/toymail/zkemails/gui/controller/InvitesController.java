@@ -32,6 +32,7 @@ public class InvitesController {
     @FXML private TableColumn<InviteRow, String> pendingStatusColumn;
 
     @FXML private TableView<InviteRow> outgoingTable;
+    @FXML private TableColumn<InviteRow, String> outgoingIdColumn;
     @FXML private TableColumn<InviteRow, String> outgoingEmailColumn;
     @FXML private TableColumn<InviteRow, String> outgoingSubjectColumn;
     @FXML private TableColumn<InviteRow, String> outgoingDateColumn;
@@ -79,10 +80,31 @@ public class InvitesController {
         pendingTable.setItems(pendingInvites);
 
         // Outgoing invites table
+        outgoingIdColumn.setCellValueFactory(new PropertyValueFactory<>("inviteId"));
         outgoingEmailColumn.setCellValueFactory(new PropertyValueFactory<>("email"));
         outgoingSubjectColumn.setCellValueFactory(new PropertyValueFactory<>("subject"));
         outgoingDateColumn.setCellValueFactory(new PropertyValueFactory<>("dateString"));
         outgoingStatusColumn.setCellValueFactory(new PropertyValueFactory<>("status"));
+
+        // Color-code outgoing status column
+        outgoingStatusColumn.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(String status, boolean empty) {
+                super.updateItem(status, empty);
+                if (empty || status == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    setText(status);
+                    if ("synced".equalsIgnoreCase(status) || "ready".equalsIgnoreCase(status)) {
+                        setStyle("-fx-text-fill: #27ae60; -fx-font-weight: bold;");
+                    } else {
+                        setStyle("-fx-text-fill: #f39c12;");
+                    }
+                }
+            }
+        });
+
         outgoingTable.setItems(outgoingInvites);
 
         refresh();
@@ -272,6 +294,45 @@ public class InvitesController {
                     mainController.showInfo("Sync Complete",
                         count + " contact(s) updated with keys from accept messages.");
                     refresh();
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    mainController.showProgress(false);
+                    mainController.showError("Sync Error", error.getMessage());
+                }
+            });
+    }
+
+    @FXML
+    public void syncSelectedAccept() {
+        InviteRow selected = outgoingTable.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            mainController.showError("No Selection", "Please select an outgoing invite to sync");
+            return;
+        }
+
+        String password = mainController.getPassword();
+        if (password == null) return;
+
+        mainController.showProgress(true);
+        mainController.setStatus("Syncing accept for " + selected.getEmail() + "...");
+
+        TaskRunner.run("Syncing accept for invite",
+            () -> services.invites().syncAcceptForInvite(password, selected.getInviteId()),
+            new TaskRunner.TaskCallback<>() {
+                @Override
+                public void onSuccess(InviteService.SyncAcceptResult result) {
+                    mainController.showProgress(false);
+                    if (result.success()) {
+                        mainController.setStatus("Sync complete");
+                        mainController.showInfo("Sync Complete", result.message());
+                        // Update status in table to indicate keys received
+                        selected.statusProperty().set("ready");
+                    } else {
+                        mainController.setStatus("Sync failed");
+                        mainController.showError("Sync Failed", result.message());
+                    }
                 }
 
                 @Override

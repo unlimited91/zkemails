@@ -60,7 +60,7 @@
         <HBox alignment="CENTER_LEFT" spacing="10">
             <Label text="Outgoing Invites (Sent by You)" style="-fx-font-weight: bold;"/>
             <Region HBox.hgrow="ALWAYS"/>
-            <Button text="Sync Accept Messages" onAction="#syncAcceptMessages"/>
+            <Button text="Sync Selected" onAction="#syncSelectedAccept" styleClass="button-success"/>
         </HBox>
 
         <TableView fx:id="outgoingTable" prefHeight="200">
@@ -68,17 +68,18 @@
                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
             </columnResizePolicy>
             <columns>
-                <TableColumn fx:id="outgoingEmailColumn" text="To" prefWidth="200"/>
-                <TableColumn fx:id="outgoingSubjectColumn" text="Subject" prefWidth="200"/>
+                <TableColumn fx:id="outgoingIdColumn" text="Invite ID" prefWidth="150"/>
+                <TableColumn fx:id="outgoingEmailColumn" text="To" prefWidth="180"/>
+                <TableColumn fx:id="outgoingSubjectColumn" text="Subject" prefWidth="180"/>
                 <TableColumn fx:id="outgoingDateColumn" text="Date" prefWidth="130"/>
-                <TableColumn fx:id="outgoingStatusColumn" text="Status" prefWidth="100"/>
+                <TableColumn fx:id="outgoingStatusColumn" text="Status" prefWidth="80"/>
             </columns>
             <placeholder>
                 <Label text="No outgoing invites"/>
             </placeholder>
         </TableView>
 
-        <Label text="Click 'Sync Accept Messages' to import keys from contacts who accepted your invites."
+        <Label text="Select an invite and click 'Sync Selected' to import keys. Status shows 'synced' (green) when keys are received."
                style="-fx-font-size: 11px; -fx-text-fill: #7f8c8d;"/>
     </VBox>
 </VBox>

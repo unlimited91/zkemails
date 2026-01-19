@@ -153,6 +153,60 @@ public final class InviteService {
     }
 
     /**
+     * Result of syncing a single accept message.
+     */
+    public record SyncAcceptResult(boolean success, String message, String contactEmail) {}
+
+    /**
+     * Sync accept message for a specific invite.
+     * Updates only the contact associated with this invite.
+     * @param password the app password
+     * @param inviteId the invite ID to sync accept for
+     * @return result with contact email if successful
+     */
+    public SyncAcceptResult syncAcceptForInvite(String password, String inviteId) throws Exception {
+        if (!context.hasActiveProfile()) {
+            return new SyncAcceptResult(false, "No active profile set", null);
+        }
+
+        Config cfg = context.zkStore().readJson("config.json", Config.class);
+        if (cfg == null) {
+            return new SyncAcceptResult(false, "Not initialized", null);
+        }
+
+        try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
+                cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
+        ))) {
+            // Search for accept messages with matching invite ID
+            List<ImapClient.MailSummary> accepts = imap.searchHeaderEquals("X-ZKEmails-Type", "accept", 100);
+
+            for (var m : accepts) {
+                Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(m.uid());
+                String msgInviteId = first(hdrs, "X-ZKEmails-Invite-Id");
+
+                if (inviteId.equals(msgInviteId)) {
+                    String fp = first(hdrs, "X-ZKEmails-Fingerprint");
+                    String ed = first(hdrs, "X-ZKEmails-PubKey-Ed25519");
+                    String x = first(hdrs, "X-ZKEmails-PubKey-X25519");
+                    String sender = extractEmail(m.from());
+
+                    if (sender == null) {
+                        return new SyncAcceptResult(false, "Could not parse sender email", null);
+                    }
+                    if (fp == null || ed == null || x == null) {
+                        return new SyncAcceptResult(false, "Accept message missing key headers", null);
+                    }
+
+                    context.contacts().upsertKeys(sender, "ready", fp, ed, x);
+                    return new SyncAcceptResult(true, "Contact " + sender + " updated with keys", sender);
+                }
+            }
+        }
+
+        return new SyncAcceptResult(false, "No accept message found for invite " + inviteId, null);
+    }
+
+    /**
      * Sync accept messages and import contact keys.
      * @param password the app password
      * @param limit maximum messages to scan
@@ -296,15 +350,40 @@ public final class InviteService {
 
     /**
      * List outgoing invites (invites you sent).
+     * Status is enriched based on contact state:
+     * - "synced" if contact has status "ready" (keys received)
+     * - "sent" otherwise (waiting for accept)
      * @return list of outgoing invite summaries
      */
     public List<InviteSummary> listOutgoingInvites() throws IOException {
         if (!context.hasActiveProfile()) {
             return List.of();
         }
-        return context.invites().listOutgoingNewestFirst().stream()
-            .map(InviteSummary::from)
-            .toList();
+        List<Invite> invites = context.invites().listOutgoingNewestFirst();
+        List<InviteSummary> result = new java.util.ArrayList<>();
+
+        for (Invite invite : invites) {
+            String status = invite.status; // default: "sent"
+            try {
+                var contact = context.contacts().get(invite.toEmail);
+                if (contact != null && "ready".equals(contact.status)) {
+                    status = "synced";
+                }
+            } catch (Exception e) {
+                // Ignore - use default status
+            }
+
+            result.add(new InviteSummary(
+                invite.inviteId,
+                invite.toEmail,
+                invite.subject,
+                invite.createdEpochSec,
+                status,
+                invite.direction
+            ));
+        }
+
+        return result;
     }
 
     private static String first(Map<String, List<String>> hdrs, String key) {
