@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="me.toymail.zkemails.gui.controller.ComposeController"
+      spacing="10">
+    <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+
+    <HBox alignment="CENTER_LEFT" spacing="10">
+        <Label text="Compose Encrypted Message" styleClass="section-title"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button fx:id="ccBccToggle" text="CC/BCC" onAction="#toggleCcBcc" styleClass="button-secondary"/>
+    </HBox>
+
+    <GridPane hgap="10" vgap="8">
+        <columnConstraints>
+            <ColumnConstraints minWidth="50" halignment="RIGHT"/>
+            <ColumnConstraints hgrow="ALWAYS"/>
+        </columnConstraints>
+
+        <!-- To: row with ComboBox and chips -->
+        <Label text="To:" styleClass="form-label" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+        <HBox spacing="5" alignment="CENTER_LEFT" GridPane.rowIndex="0" GridPane.columnIndex="1">
+            <ComboBox fx:id="toCombo" prefWidth="200" editable="true" promptText="Select recipient"/>
+            <Button text="+" onAction="#addToRecipient" styleClass="button-add" prefWidth="30"/>
+            <FlowPane fx:id="toChips" hgap="5" vgap="3" HBox.hgrow="ALWAYS"/>
+        </HBox>
+
+        <!-- CC: row (initially hidden) -->
+        <Label fx:id="ccLabel" text="CC:" styleClass="form-label" GridPane.rowIndex="1" GridPane.columnIndex="0" visible="false" managed="false"/>
+        <HBox fx:id="ccRow" spacing="5" alignment="CENTER_LEFT" GridPane.rowIndex="1" GridPane.columnIndex="1" visible="false" managed="false">
+            <ComboBox fx:id="ccCombo" prefWidth="200" editable="true" promptText="Select CC recipient"/>
+            <Button text="+" onAction="#addCcRecipient" styleClass="button-add" prefWidth="30"/>
+            <FlowPane fx:id="ccChips" hgap="5" vgap="3" HBox.hgrow="ALWAYS"/>
+        </HBox>
+
+        <!-- BCC: row (initially hidden) -->
+        <Label fx:id="bccLabel" text="BCC:" styleClass="form-label" GridPane.rowIndex="2" GridPane.columnIndex="0" visible="false" managed="false"/>
+        <HBox fx:id="bccRow" spacing="5" alignment="CENTER_LEFT" GridPane.rowIndex="2" GridPane.columnIndex="1" visible="false" managed="false">
+            <ComboBox fx:id="bccCombo" prefWidth="200" editable="true" promptText="Select BCC recipient"/>
+            <Button text="+" onAction="#addBccRecipient" styleClass="button-add" prefWidth="30"/>
+            <FlowPane fx:id="bccChips" hgap="5" vgap="3" HBox.hgrow="ALWAYS"/>
+        </HBox>
+
+        <Label text="Subject:" styleClass="form-label" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
+        <TextField fx:id="subjectField" promptText="Enter subject"
+                   GridPane.rowIndex="3" GridPane.columnIndex="1"/>
+    </GridPane>
+
+    <Label text="Message:" styleClass="form-label"/>
+    <TextArea fx:id="bodyArea" VBox.vgrow="ALWAYS" promptText="Type your message here..."
+              wrapText="true"/>
+
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <Label text="Attachments:" styleClass="form-label"/>
+        <Button text="Add Files" onAction="#addAttachments"/>
+        <Label fx:id="attachmentCountLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+    </HBox>
+    <ListView fx:id="attachmentList" prefHeight="80" maxHeight="120"/>
+
+    <HBox spacing="10" alignment="CENTER_RIGHT">
+        <Label fx:id="statusLabel" text="" style="-fx-text-fill: #7f8c8d;"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="Clear" onAction="#clearForm"/>
+        <Button fx:id="sendButton" text="Send Encrypted" onAction="#send" styleClass="button-success"/>
+    </HBox>
+</VBox>

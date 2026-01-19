@@ -16,6 +16,7 @@ import picocli.CommandLine.Command;
                 "  zke invite --to friend@email.com Send an invite to start encrypted chat",
                 "  zke sem                          Send an encrypted message (opens editor)",
                 "  zke rem                          Read encrypted messages",
+                "  zke gui                          Launch the graphical user interface",
                 "",
                 "Common Commands:",
                 "  init      Initialize zke with your email",
@@ -28,6 +29,7 @@ import picocli.CommandLine.Command;
                 "  ack       Acknowledge invites",
                 "  lsp       List profiles",
                 "  pset      Set active profile",
+                "  gui       Launch graphical user interface",
                 "",
                 "Use 'zke <command> --help' for more information on a command."
         },
@@ -43,7 +45,9 @@ import picocli.CommandLine.Command;
                 SendMessageCmd.class,
                 ReadEncryptedMessageCmd.class,
                 SyncAckCmd.class,
-                CredentialCmd.class
+                CredentialCmd.class,
+                ContactVersionsCmd.class,
+                GuiCmd.class
         }
 )
 public final class RootCmd implements Runnable {

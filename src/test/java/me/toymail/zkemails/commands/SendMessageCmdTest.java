@@ -32,7 +32,7 @@ public class SendMessageCmdTest extends CommandTestBase {
 
             SendMessageCmd cmd = new SendMessageCmd(context);
             cmd.password = "pass";
-            cmd.to = "recipient@example.com";
+            cmd.toEmails = java.util.List.of("recipient@example.com");
             cmd.subject = "Hello";
             cmd.body = "World";
 
@@ -57,7 +57,7 @@ public class SendMessageCmdTest extends CommandTestBase {
 
         SendMessageCmd cmd = new SendMessageCmd(context);
         cmd.password = "pass";
-        cmd.to = "unknown@example.com";
+        cmd.toEmails = java.util.List.of("unknown@example.com");
         cmd.subject = "Hello";
         cmd.body = "World";
 

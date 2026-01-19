@@ -11,6 +11,8 @@ public final class StoreContext {
     private ZkStore zkStore;
     private ContactsStore contactsStore;
     private InviteStore inviteStore;
+    private SentStore sentStore;
+    private InboxStore inboxStore;
 
     private StoreContext(ProfileConfigStore profileConfigStore) {
         this.profileConfigStore = profileConfigStore;
@@ -38,6 +40,8 @@ public final class StoreContext {
         this.zkStore = new ZkStore(email);
         this.contactsStore = new ContactsStore(zkStore);
         this.inviteStore = new InviteStore(zkStore);
+        this.sentStore = new SentStore(zkStore);
+        this.inboxStore = new InboxStore(zkStore.baseDir().resolve("inbox"));
     }
 
     public void switchProfile(String email) throws IOException {
@@ -64,6 +68,14 @@ public final class StoreContext {
 
     public InviteStore invites() {
         return inviteStore;
+    }
+
+    public SentStore sentStore() {
+        return sentStore;
+    }
+
+    public InboxStore inboxStore() {
+        return inboxStore;
     }
 
     public CredentialStore credentials() {
