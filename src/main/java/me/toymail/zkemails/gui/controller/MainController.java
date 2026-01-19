@@ -23,7 +23,7 @@ import java.util.List;
  * Main controller for the application window.
  * Manages navigation between views and profile selection.
  */
-public class MainController {
+public class MainController implements OnboardingDialog.OnboardingCallback {
     private final ServiceContext services;
     private MessageCacheService cacheService;
     private ProfileConfigWatcher profileWatcher;
@@ -78,8 +78,12 @@ public class MainController {
         }
         profileWatcher.start();
 
-        // Default to messages view and start cache
+        // Default to messages view and start cache (or show onboarding)
         Platform.runLater(() -> {
+            // Check for first-time setup
+            showOnboardingDialogIfNeeded();
+
+            // Initialize cache and show messages view
             initializeCacheService();
             switchToMessages();
         });
@@ -509,6 +513,48 @@ public class MainController {
     public void shutdown() {
         if (profileWatcher != null) {
             profileWatcher.stop();
+        }
+    }
+
+    // ==================== First-Time Onboarding ====================
+
+    /**
+     * Check if this is first launch and show onboarding dialog if needed.
+     */
+    private void showOnboardingDialogIfNeeded() {
+        OnboardingDialog onboarding = new OnboardingDialog(services, this);
+        onboarding.showIfNeeded();
+    }
+
+    // ==================== OnboardingCallback Implementation ====================
+
+    @Override
+    public void onOnboardingComplete(OnboardingDialog.OnboardingResult result) {
+        // Reload profiles to pick up new profile
+        loadProfiles();
+
+        // Cache password for this session
+        currentPassword = result.password();
+
+        // Start cache service
+        if (cacheService != null && !cacheServiceStarted) {
+            cacheService.start(result.password());
+            cacheServiceStarted = true;
+        }
+    }
+
+    /**
+     * Programmatically select a tab by name.
+     */
+    @Override
+    public void selectTab(String tabName) {
+        switch (tabName) {
+            case "Messages" -> switchToMessages();
+            case "Sent" -> switchToSent();
+            case "Compose" -> switchToCompose();
+            case "Contacts" -> switchToContacts();
+            case "Invites" -> switchToInvites();
+            case "Settings" -> switchToSettings();
         }
     }
 }
