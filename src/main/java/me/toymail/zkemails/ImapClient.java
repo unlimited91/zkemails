@@ -172,6 +172,48 @@ public final class ImapClient implements AutoCloseable {
         return summarize(found, limit);
     }
 
+    /**
+     * Search for messages with a specific header value, received since a given date.
+     * Uses the provided checkpoint date with a 1-day buffer for reliability.
+     *
+     * @param headerName the header name to match
+     * @param headerValue the header value to match
+     * @param sinceEpochSec checkpoint timestamp (epoch seconds) - will search from 1 day before this
+     * @param limit maximum number of results
+     * @return list of matching messages
+     */
+    public List<MailSummary> searchHeaderEqualsSince(String headerName, String headerValue,
+                                                      long sinceEpochSec, int limit) throws MessagingException {
+        // Apply 1-day buffer before checkpoint for reliability (IMAP date precision is day-level)
+        Date sinceDate;
+        if (sinceEpochSec <= 0) {
+            // No checkpoint - use default 30-day window
+            sinceDate = daysAgo(SEARCH_DAYS_LIMIT);
+        } else {
+            // Checkpoint with 1-day buffer
+            long bufferedEpochMs = (sinceEpochSec - 86400) * 1000; // subtract 1 day
+            Date checkpointDate = new Date(bufferedEpochMs);
+            Date maxWindowDate = daysAgo(SEARCH_DAYS_LIMIT);
+            // Use the more recent of checkpoint-1day or 30-days-ago
+            sinceDate = checkpointDate.after(maxWindowDate) ? checkpointDate : maxWindowDate;
+        }
+
+        System.out.println("=== ImapClient Search Debug ===");
+        System.out.println("Checkpoint epoch: " + sinceEpochSec);
+        System.out.println("Computed sinceDate: " + sinceDate);
+        System.out.println("Searching for: " + headerName + "=" + headerValue + " AND receivedDate >= " + sinceDate);
+
+        SearchTerm term = new AndTerm(
+                new ReceivedDateTerm(ComparisonTerm.GE, sinceDate),
+                new HeaderTerm(headerName, headerValue)
+        );
+        log.debug("Searching for header {}={} since {} (checkpoint: {})",
+                  headerName, headerValue, sinceDate, sinceEpochSec);
+        Message[] found = inbox.search(term);
+        System.out.println("Raw IMAP search returned " + (found != null ? found.length : 0) + " messages");
+        return summarize(found, limit);
+    }
+
     public List<MailSummary> searchUnread(int limit) throws MessagingException {
         Message[] found = inbox.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
         return summarize(found, limit);

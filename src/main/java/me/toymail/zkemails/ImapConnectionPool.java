@@ -87,6 +87,29 @@ public final class ImapConnectionPool {
     }
 
     /**
+     * Create a fresh (non-pooled) connection for parallel operations.
+     * The caller is responsible for closing this connection when done.
+     * Use this when you need multiple concurrent connections to the same folder.
+     *
+     * @param config IMAP configuration
+     * @param folderName folder to open
+     * @return a new ImapClient that must be closed by the caller
+     */
+    public ImapClient createFreshConnection(ImapClient.ImapConfig config, String folderName) throws Exception {
+        log.debug("Creating fresh (non-pooled) IMAP connection for {}@{}:{}/{}",
+                  config.username(), config.host(), config.port(), folderName);
+        return ImapClient.connect(config, folderName);
+    }
+
+    /**
+     * Create a fresh (non-pooled) connection for INBOX.
+     * The caller is responsible for closing this connection when done.
+     */
+    public ImapClient createFreshConnection(ImapClient.ImapConfig config) throws Exception {
+        return createFreshConnection(config, "INBOX");
+    }
+
+    /**
      * Get or create a connection for the sent folder.
      */
     public ImapClient getSentConnection(ImapClient.ImapConfig config) throws Exception {
