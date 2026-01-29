@@ -567,6 +567,7 @@ public final class MessageService {
 
     /**
      * Send an encrypted message with threading headers.
+     * Uses V2 format for all messages.
      * @param password the app password
      * @param toEmail the recipient email
      * @param subject the message subject
@@ -578,68 +579,11 @@ public final class MessageService {
      */
     public SendResult sendMessage(String password, String toEmail, String subject, String body,
                                    String inReplyTo, String references, String threadId) throws Exception {
-        if (!context.hasActiveProfile()) {
-            return new SendResult(false, "No active profile set");
-        }
-
-        Config cfg = context.zkStore().readJson("config.json", Config.class);
-        IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
-
-        if (cfg == null) {
-            return new SendResult(false, "Not initialized. Run: zke init --email <your-email>");
-        }
-        if (myKeys == null) {
-            return new SendResult(false, "Missing keys.json. Re-run init.");
-        }
-
-        if (toEmail == null || toEmail.isBlank()) {
-            return new SendResult(false, "Recipient is required");
-        }
-        if (subject == null || subject.isBlank()) {
-            return new SendResult(false, "Subject is required");
-        }
-        if (body == null || body.isBlank()) {
-            return new SendResult(false, "Cannot send empty message");
-        }
-
-        ContactsStore.Contact c = context.contacts().get(toEmail);
-        if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
-            return new SendResult(false, "No pinned X25519 key for contact: " + toEmail +
-                    ". Run: zke sync-ack (or ack invi if they invited you).");
-        }
-
-        // Generate thread ID for new messages, use provided one for replies
-        String effectiveThreadId = threadId;
-        if (effectiveThreadId == null || effectiveThreadId.isBlank()) {
-            effectiveThreadId = UUID.randomUUID().toString();
-        }
-
-        String messageId;
-        try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(
-                cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
-            messageId = smtp.sendEncryptedMessage(cfg.email, toEmail, subject, body, myKeys,
-                    c.fingerprintHex, c.x25519PublicB64, inReplyTo, references, effectiveThreadId);
-        }
-
-        // Save sent message locally for thread view display
-        try {
-            SentStore.SentMessage sentMsg = new SentStore.SentMessage(
-                    UUID.randomUUID().toString(),
-                    messageId,
-                    toEmail,
-                    subject,
-                    body,
-                    inReplyTo,
-                    references,
-                    effectiveThreadId,
-                    Instant.now().getEpochSecond()
-            );
-            context.sentStore().save(sentMsg);
-        } catch (Exception e) {
-            log.warn("Sent message but failed to save locally: {}", e.getMessage());
-        }
-
-        return new SendResult(true, "Encrypted message sent to " + toEmail);
+        // Delegate to V2 multi-recipient method with single recipient
+        MultiRecipientInput recipients = new MultiRecipientInput(List.of(toEmail), null, null);
+        MultiSendResult result = sendMultiRecipientMessage(password, recipients, subject, body,
+                inReplyTo, references, threadId);
+        return new SendResult(result.success(), result.message());
     }
 
     /**
@@ -649,6 +593,7 @@ public final class MessageService {
 
     /**
      * Send an encrypted message with attachments.
+     * Uses V2 format for all messages.
      * @param password the app password
      * @param toEmail the recipient email
      * @param subject the message subject
@@ -662,109 +607,11 @@ public final class MessageService {
     public SendResult sendMessageWithAttachments(String password, String toEmail, String subject, String body,
                                                   List<Path> attachmentPaths,
                                                   String inReplyTo, String references, String threadId) throws Exception {
-        if (!context.hasActiveProfile()) {
-            return new SendResult(false, "No active profile set");
-        }
-
-        Config cfg = context.zkStore().readJson("config.json", Config.class);
-        IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
-
-        if (cfg == null) {
-            return new SendResult(false, "Not initialized. Run: zke init --email <your-email>");
-        }
-        if (myKeys == null) {
-            return new SendResult(false, "Missing keys.json. Re-run init.");
-        }
-
-        if (toEmail == null || toEmail.isBlank()) {
-            return new SendResult(false, "Recipient is required");
-        }
-        if (subject == null || subject.isBlank()) {
-            return new SendResult(false, "Subject is required");
-        }
-        if (body == null || body.isBlank()) {
-            return new SendResult(false, "Cannot send empty message");
-        }
-
-        ContactsStore.Contact c = context.contacts().get(toEmail);
-        if (c == null || c.x25519PublicB64 == null || c.fingerprintHex == null) {
-            return new SendResult(false, "No pinned X25519 key for contact: " + toEmail +
-                    ". Run: zke sync-ack (or ack invi if they invited you).");
-        }
-
-        // Build attachment inputs
-        List<CryptoBox.AttachmentInput> attachments = new ArrayList<>();
-        if (attachmentPaths != null) {
-            for (Path path : attachmentPaths) {
-                try {
-                    CryptoBox.AttachmentInput att = CryptoBox.AttachmentInput.fromFile(path);
-                    if (att.data().length > MAX_ATTACHMENT_SIZE) {
-                        return new SendResult(false, "Attachment too large: " + path.getFileName() +
-                                " (" + (att.data().length / 1024 / 1024) + "MB > 25MB limit)");
-                    }
-                    attachments.add(att);
-                } catch (Exception e) {
-                    return new SendResult(false, "Failed to read attachment: " + path + " - " + e.getMessage());
-                }
-            }
-        }
-
-        // Generate thread ID for new messages
-        String effectiveThreadId = threadId;
-        if (effectiveThreadId == null || effectiveThreadId.isBlank()) {
-            effectiveThreadId = UUID.randomUUID().toString();
-        }
-
-        String messageId;
-        try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(
-                cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
-            if (attachments.isEmpty()) {
-                messageId = smtp.sendEncryptedMessage(cfg.email, toEmail, subject, body, myKeys,
-                        c.fingerprintHex, c.x25519PublicB64, inReplyTo, references, effectiveThreadId);
-            } else {
-                messageId = smtp.sendEncryptedMessageWithAttachments(cfg.email, toEmail, subject, body,
-                        attachments, myKeys, c.fingerprintHex, c.x25519PublicB64, inReplyTo, references, effectiveThreadId);
-            }
-        }
-
-        // Save sent message locally
-        try {
-            String msgLocalId = UUID.randomUUID().toString();
-            SentStore.SentMessage sentMsg = new SentStore.SentMessage(
-                    msgLocalId,
-                    messageId,
-                    toEmail,
-                    subject,
-                    body,
-                    inReplyTo,
-                    references,
-                    effectiveThreadId,
-                    Instant.now().getEpochSecond()
-            );
-
-            // Save attachment metadata and files locally
-            if (!attachments.isEmpty()) {
-                List<SentStore.AttachmentMeta> attachmentMetas = new ArrayList<>();
-                for (var att : attachments) {
-                    String localPath = context.sentStore().saveAttachment(effectiveThreadId, msgLocalId,
-                            att.filename(), att.data());
-                    attachmentMetas.add(new SentStore.AttachmentMeta(
-                            att.filename(),
-                            att.contentType(),
-                            att.data().length,
-                            localPath
-                    ));
-                }
-                sentMsg.attachments = attachmentMetas;
-            }
-
-            context.sentStore().save(sentMsg);
-        } catch (Exception e) {
-            log.warn("Sent message but failed to save locally: {}", e.getMessage());
-        }
-
-        String attachmentInfo = attachments.isEmpty() ? "" : " with " + attachments.size() + " attachment(s)";
-        return new SendResult(true, "Encrypted message sent to " + toEmail + attachmentInfo);
+        // Delegate to V2 multi-recipient method with single recipient
+        MultiRecipientInput recipients = new MultiRecipientInput(List.of(toEmail), null, null);
+        MultiSendResult result = sendMultiRecipientMessageWithAttachments(password, recipients, subject, body,
+                attachmentPaths, inReplyTo, references, threadId);
+        return new SendResult(result.success(), result.message());
     }
 
     // ==================== V2 Multi-Recipient Send ====================
@@ -1122,6 +969,7 @@ public final class MessageService {
 
     /**
      * Reply to a message.
+     * Uses V2 format for all messages.
      * @param password the app password
      * @param originalMessageUid the UID of the message to reply to
      * @param replyBody the reply body
@@ -1133,9 +981,7 @@ public final class MessageService {
         }
 
         Config cfg = context.zkStore().readJson("config.json", Config.class);
-        IdentityKeys.KeyBundle myKeys = context.zkStore().readJson("keys.json", IdentityKeys.KeyBundle.class);
-
-        if (cfg == null || myKeys == null) {
+        if (cfg == null) {
             return new SendResult(false, "Not initialized");
         }
 
@@ -1152,11 +998,6 @@ public final class MessageService {
             String replyToEmail = extractEmail(msg.from());
             if (replyToEmail == null) {
                 return new SendResult(false, "Could not extract email from: " + msg.from());
-            }
-
-            ContactsStore.Contact contact = context.contacts().get(replyToEmail);
-            if (contact == null || contact.x25519PublicB64 == null || contact.fingerprintHex == null) {
-                return new SendResult(false, "No pinned X25519 key for contact: " + replyToEmail);
             }
 
             String replySubject = msg.subject();
@@ -1190,23 +1031,9 @@ public final class MessageService {
             newReferences = newReferences.trim();
             if (newReferences.isEmpty()) newReferences = null;
 
-            try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(
-                    cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, password))) {
-                smtp.sendEncryptedMessage(
-                        cfg.email,
-                        replyToEmail,
-                        replySubject,
-                        replyBody,
-                        myKeys,
-                        contact.fingerprintHex,
-                        contact.x25519PublicB64,
-                        originalMessageId,
-                        newReferences,
-                        threadId
-                );
-            }
-
-            return new SendResult(true, "Reply sent to " + replyToEmail);
+            // Use V2 format via sendMessage
+            return sendMessage(password, replyToEmail, replySubject, replyBody,
+                    originalMessageId, newReferences, threadId);
         } catch (Exception e) {
             ImapConnectionPool.getInstance().invalidateConnection(imap);
             throw e;
