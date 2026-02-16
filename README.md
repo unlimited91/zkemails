@@ -7,7 +7,8 @@ End-to-end encrypted multi profile email client using key gossip + TOFU (Trust O
 ### Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/1.0.0.beta2/install.sh | bash
+
 ```
 
 This will:
