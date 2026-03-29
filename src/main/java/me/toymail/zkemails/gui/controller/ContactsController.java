@@ -127,32 +127,6 @@ public class ContactsController {
     }
 
     @FXML
-    public void syncAcceptMessages() {
-        String password = mainController.getPassword();
-        if (password == null) return;
-
-        mainController.showProgress(true);
-        mainController.setStatus("Syncing accept messages...");
-
-        TaskRunner.run("Syncing accepts", () -> services.invites().syncAcceptMessages(password, 200),
-            new TaskRunner.TaskCallback<>() {
-                @Override
-                public void onSuccess(Integer count) {
-                    mainController.showProgress(false);
-                    mainController.setStatus("Synced " + count + " contacts");
-                    mainController.showInfo("Sync Complete", "Updated " + count + " contacts with keys");
-                    refresh();
-                }
-
-                @Override
-                public void onError(Throwable error) {
-                    mainController.showProgress(false);
-                    mainController.showError("Sync Failed", error.getMessage());
-                }
-            });
-    }
-
-    @FXML
     public void showVersionHistory() {
         mainController.switchToContactVersions();
     }

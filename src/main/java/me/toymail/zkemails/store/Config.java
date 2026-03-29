@@ -10,6 +10,7 @@ public final class Config {
         public int port = 993;
         public boolean ssl = true;
         public String username; // defaults to email
+        public String folder = "INBOX"; // folder to read messages from
     }
 
     public static final class Smtp {

@@ -160,6 +160,7 @@ public final class InviteService {
     /**
      * Sync accept message for a specific invite.
      * Updates only the contact associated with this invite.
+     * Skips if contact is already in "ready" state to prevent key corruption.
      * @param password the app password
      * @param inviteId the invite ID to sync accept for
      * @return result with contact email if successful
@@ -197,6 +198,14 @@ public final class InviteService {
                         return new SyncAcceptResult(false, "Accept message missing key headers", null);
                     }
 
+                    // Check if contact is already ready - skip to prevent key corruption
+                    var existingContact = context.contacts().get(sender);
+                    if (existingContact != null && "ready".equals(existingContact.status)
+                            && existingContact.fingerprintHex != null) {
+                        return new SyncAcceptResult(true,
+                                "Contact " + sender + " already has keys (skipped to prevent overwrite)", sender);
+                    }
+
                     context.contacts().upsertKeys(sender, "ready", fp, ed, x);
                     return new SyncAcceptResult(true, "Contact " + sender + " updated with keys", sender);
                 }
@@ -204,45 +213,6 @@ public final class InviteService {
         }
 
         return new SyncAcceptResult(false, "No accept message found for invite " + inviteId, null);
-    }
-
-    /**
-     * Sync accept messages and import contact keys.
-     * @param password the app password
-     * @param limit maximum messages to scan
-     * @return number of contacts updated
-     */
-    public int syncAcceptMessages(String password, int limit) throws Exception {
-        if (!context.hasActiveProfile()) {
-            throw new IllegalStateException("No active profile set");
-        }
-
-        Config cfg = context.zkStore().readJson("config.json", Config.class);
-        if (cfg == null) {
-            throw new IllegalStateException("Not initialized");
-        }
-
-        int updated = 0;
-        try (ImapClient imap = ImapClient.connect(new ImapClient.ImapConfig(
-                cfg.imap.host, cfg.imap.port, cfg.imap.ssl, cfg.imap.username, password
-        ))) {
-            List<ImapClient.MailSummary> accepts = imap.searchHeaderEquals("X-ZKEmails-Type", "accept", limit);
-            for (var m : accepts) {
-                Map<String, List<String>> hdrs = imap.fetchAllHeadersByUid(m.uid());
-                String fp = first(hdrs, "X-ZKEmails-Fingerprint");
-                String ed = first(hdrs, "X-ZKEmails-PubKey-Ed25519");
-                String x = first(hdrs, "X-ZKEmails-PubKey-X25519");
-
-                String sender = extractEmail(m.from());
-                if (sender == null) continue;
-                if (fp == null || ed == null || x == null) continue;
-
-                context.contacts().upsertKeys(sender, "ready", fp, ed, x);
-                updated++;
-            }
-        }
-
-        return updated;
     }
 
     /**

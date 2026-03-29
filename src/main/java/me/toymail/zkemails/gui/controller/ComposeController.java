@@ -282,12 +282,10 @@ public class ComposeController {
                 .toList();
 
         if (isMultiRecipient) {
-            // Use v2 multi-recipient send
-            if (!attachmentPaths.isEmpty()) {
-                mainController.showInfo("Note", "Attachments not yet supported for multi-recipient messages.");
-            }
-
-            String statusMsg = "Sending to " + totalRecipients + " recipient(s)...";
+            // Use v2 multi-recipient send (with attachments if any)
+            String statusMsg = attachmentPaths.isEmpty()
+                    ? "Sending to " + totalRecipients + " recipient(s)..."
+                    : "Sending to " + totalRecipients + " recipient(s) with " + attachmentPaths.size() + " attachment(s)...";
             mainController.setStatus(statusMsg);
 
             MessageService.MultiRecipientInput recipients = new MessageService.MultiRecipientInput(
@@ -297,8 +295,8 @@ public class ComposeController {
             );
 
             TaskRunner.run("Sending multi-recipient message",
-                () -> services.messages().sendMultiRecipientMessage(password, recipients, subject, body,
-                        null, null, null),
+                () -> services.messages().sendMultiRecipientMessageWithAttachments(password, recipients, subject, body,
+                        attachmentPaths, null, null, null),
                 new TaskRunner.TaskCallback<>() {
                     @Override
                     public void onSuccess(MessageService.MultiSendResult result) {

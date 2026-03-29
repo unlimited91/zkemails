@@ -1,9 +1,9 @@
 package me.toymail.zkemails.commands;
 
 import me.toymail.zkemails.ImapClient;
-import me.toymail.zkemails.SmtpClient;
 import me.toymail.zkemails.crypto.CryptoBox;
 import me.toymail.zkemails.crypto.IdentityKeys;
+import me.toymail.zkemails.service.MessageService;
 import me.toymail.zkemails.store.Config;
 import me.toymail.zkemails.store.ContactsStore;
 import me.toymail.zkemails.store.StoreContext;
@@ -288,23 +288,18 @@ public class ReadEncryptedMessageCmd implements Runnable {
             return;
         }
 
-        // Send the reply
-        try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, resolvedPassword))) {
-            smtp.sendEncryptedMessage(
-                    cfg.email,
-                    replyToEmail,
-                    replySubject,
-                    body,
-                    myKeys,
-                    contact.fingerprintHex,
-                    contact.x25519PublicB64,
-                    originalMessageId,
-                    newReferences,
-                    threadId
-            );
-        }
+        // Send the reply using V2 format via MessageService
+        MessageService msgService = new MessageService(context);
+        MessageService.SendResult sendResult = msgService.sendMessage(
+                resolvedPassword, replyToEmail, replySubject, body,
+                originalMessageId, newReferences, threadId
+        );
 
-        log.info("Reply sent to {}", replyToEmail);
+        if (sendResult.success()) {
+            log.info("Reply sent to {}", replyToEmail);
+        } else {
+            log.error("Failed to send reply: {}", sendResult.message());
+        }
     }
 
     private String decryptMessage(ImapClient imap, ImapClient.MailSummary msg, Config cfg, IdentityKeys.KeyBundle myKeys) {

@@ -225,7 +225,7 @@ public class OnboardingDialog {
             int smtpPort = advancedVisible[0] ? Integer.parseInt(smtpPortField.getText()) : 587;
 
             InitService.InitConfig config = new InitService.InitConfig(
-                email, password, imapHost, imapPort, smtpHost, smtpPort
+                email, password, imapHost, imapPort, smtpHost, smtpPort, "INBOX"
             );
 
             // Run initialization in background

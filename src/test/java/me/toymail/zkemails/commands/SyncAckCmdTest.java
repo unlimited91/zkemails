@@ -22,12 +22,13 @@ public class SyncAckCmdTest extends CommandTestBase {
             ImapClient imap = mock(ImapClient.class);
             mockedImap.when(() -> ImapClient.connect(any())).thenReturn(imap);
 
-            // Mock finding accept email
+            // Mock finding accept email with matching invite ID
             List<ImapClient.MailSummary> msgs = new ArrayList<>();
             msgs.add(new ImapClient.MailSummary(1, 100, false, new Date(), "receiver@example.com", "Re: Invite"));
             when(imap.searchHeaderEquals(eq("X-ZKEmails-Type"), eq("accept"), anyInt())).thenReturn(msgs);
 
             Map<String, List<String>> headers = new HashMap<>();
+            headers.put("X-ZKEmails-Invite-Id", List.of("test-invite-123"));
             headers.put("X-ZKEmails-Fingerprint", List.of("fp123"));
             headers.put("X-ZKEmails-PubKey-Ed25519", List.of("ed123"));
             headers.put("X-ZKEmails-PubKey-X25519", List.of("x123"));
@@ -37,6 +38,7 @@ public class SyncAckCmdTest extends CommandTestBase {
 
             SyncAckCmd cmd = new SyncAckCmd(context);
             cmd.password = "pass";
+            cmd.inviteId = "test-invite-123";
 
             cmd.run();
 
@@ -44,6 +46,39 @@ public class SyncAckCmdTest extends CommandTestBase {
             verify(imap).fetchAllHeadersByUid(100);
 
             // Verify contact saved (implicitly via ZkStore, but hard to verify without reading file)
+        }
+    }
+
+    @Test
+    public void testSyncAck_NoMatchingInviteId() throws Exception {
+        setupInitializedProfile("inviter@example.com");
+
+        try (MockedStatic<ImapClient> mockedImap = mockStatic(ImapClient.class)) {
+            ImapClient imap = mock(ImapClient.class);
+            mockedImap.when(() -> ImapClient.connect(any())).thenReturn(imap);
+
+            // Mock finding accept email but with different invite ID
+            List<ImapClient.MailSummary> msgs = new ArrayList<>();
+            msgs.add(new ImapClient.MailSummary(1, 100, false, new Date(), "receiver@example.com", "Re: Invite"));
+            when(imap.searchHeaderEquals(eq("X-ZKEmails-Type"), eq("accept"), anyInt())).thenReturn(msgs);
+
+            Map<String, List<String>> headers = new HashMap<>();
+            headers.put("X-ZKEmails-Invite-Id", List.of("different-invite-456"));
+            headers.put("X-ZKEmails-Fingerprint", List.of("fp123"));
+            headers.put("X-ZKEmails-PubKey-Ed25519", List.of("ed123"));
+            headers.put("X-ZKEmails-PubKey-X25519", List.of("x123"));
+            when(imap.fetchAllHeadersByUid(100)).thenReturn(headers);
+
+            reinitializeContext();
+
+            SyncAckCmd cmd = new SyncAckCmd(context);
+            cmd.password = "pass";
+            cmd.inviteId = "test-invite-123";  // Different from what's in the message
+
+            cmd.run();
+
+            // Should still search but not find a match
+            verify(imap).searchHeaderEquals(eq("X-ZKEmails-Type"), eq("accept"), anyInt());
         }
     }
 
@@ -64,4 +99,3 @@ public class SyncAckCmdTest extends CommandTestBase {
         store.writeJson("config.json", cfg);
     }
 }
-

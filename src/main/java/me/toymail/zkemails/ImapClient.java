@@ -123,6 +123,88 @@ public final class ImapClient implements AutoCloseable {
         throw new MessagingException("Could not find sent folder. Tried: " + String.join(", ", SENT_FOLDER_NAMES));
     }
 
+    /**
+     * List all available folders from the IMAP server.
+     * Connects temporarily to enumerate folders, then disconnects.
+     *
+     * @param cfg IMAP configuration
+     * @return List of folder names (full paths like "[Gmail]/All Mail")
+     */
+    public static List<String> listAvailableFolders(ImapConfig cfg) throws MessagingException {
+        Properties props = new Properties();
+        props.put("mail.store.protocol", cfg.ssl() ? "imaps" : "imap");
+        props.put("mail.imaps.ssl.enable", String.valueOf(cfg.ssl()));
+        props.put("mail.imaps.ssl.checkserveridentity", "true");
+        props.put("mail.imaps.connectiontimeout", "15000");
+        props.put("mail.imaps.timeout", "30000");
+
+        Session session = Session.getInstance(props);
+        Store store = session.getStore(cfg.ssl() ? "imaps" : "imap");
+
+        try {
+            store.connect(cfg.host(), cfg.port(), cfg.username(), cfg.password());
+            log.info("Connected to list folders");
+
+            List<String> folderNames = new ArrayList<>();
+            Folder defaultFolder = store.getDefaultFolder();
+
+            // Recursively list all folders
+            listFoldersRecursive(defaultFolder, folderNames);
+
+            // Sort alphabetically, but put INBOX first
+            folderNames.sort((a, b) -> {
+                if ("INBOX".equalsIgnoreCase(a)) return -1;
+                if ("INBOX".equalsIgnoreCase(b)) return 1;
+                return a.compareToIgnoreCase(b);
+            });
+
+            log.info("Found {} folders", folderNames.size());
+            return folderNames;
+
+        } finally {
+            if (store.isConnected()) {
+                store.close();
+            }
+        }
+    }
+
+    /**
+     * Recursively list folders and subfolders.
+     */
+    private static void listFoldersRecursive(Folder parent, List<String> result) throws MessagingException {
+        Folder[] folders = parent.list();
+        for (Folder folder : folders) {
+            String fullName = folder.getFullName();
+
+            // Check if folder can hold messages (not just a container)
+            int type = folder.getType();
+            if ((type & Folder.HOLDS_MESSAGES) != 0) {
+                // Skip system folders that aren't useful for reading
+                if (!isSystemFolder(fullName)) {
+                    result.add(fullName);
+                }
+            }
+
+            // Recurse into subfolders if it can hold folders
+            if ((type & Folder.HOLDS_FOLDERS) != 0) {
+                listFoldersRecursive(folder, result);
+            }
+        }
+    }
+
+    /**
+     * Check if a folder is a system folder that shouldn't be shown for selection.
+     */
+    private static boolean isSystemFolder(String folderName) {
+        String lower = folderName.toLowerCase();
+        return lower.contains("/spam") ||
+               lower.contains("/trash") ||
+               lower.contains("/drafts") ||
+               lower.equals("[gmail]/all mail") ||
+               lower.equals("[gmail]/important") ||
+               lower.equals("[gmail]/starred");
+    }
+
     @Override
     public void close() throws MessagingException {
         if (inbox != null && inbox.isOpen()) inbox.close(false);
@@ -169,6 +251,48 @@ public final class ImapClient implements AutoCloseable {
         );
         log.debug("Searching for header {}={} since {}", headerName, headerValue, sinceDate);
         Message[] found = inbox.search(term);
+        return summarize(found, limit);
+    }
+
+    /**
+     * Search for messages with a specific header value, received since a given date.
+     * Uses the provided checkpoint date with a 1-day buffer for reliability.
+     *
+     * @param headerName the header name to match
+     * @param headerValue the header value to match
+     * @param sinceEpochSec checkpoint timestamp (epoch seconds) - will search from 1 day before this
+     * @param limit maximum number of results
+     * @return list of matching messages
+     */
+    public List<MailSummary> searchHeaderEqualsSince(String headerName, String headerValue,
+                                                      long sinceEpochSec, int limit) throws MessagingException {
+        // Apply 1-day buffer before checkpoint for reliability (IMAP date precision is day-level)
+        Date sinceDate;
+        if (sinceEpochSec <= 0) {
+            // No checkpoint - use default 30-day window
+            sinceDate = daysAgo(SEARCH_DAYS_LIMIT);
+        } else {
+            // Checkpoint with 1-day buffer
+            long bufferedEpochMs = (sinceEpochSec - 86400) * 1000; // subtract 1 day
+            Date checkpointDate = new Date(bufferedEpochMs);
+            Date maxWindowDate = daysAgo(SEARCH_DAYS_LIMIT);
+            // Use the more recent of checkpoint-1day or 30-days-ago
+            sinceDate = checkpointDate.after(maxWindowDate) ? checkpointDate : maxWindowDate;
+        }
+
+        System.out.println("=== ImapClient Search Debug ===");
+        System.out.println("Checkpoint epoch: " + sinceEpochSec);
+        System.out.println("Computed sinceDate: " + sinceDate);
+        System.out.println("Searching for: " + headerName + "=" + headerValue + " AND receivedDate >= " + sinceDate);
+
+        SearchTerm term = new AndTerm(
+                new ReceivedDateTerm(ComparisonTerm.GE, sinceDate),
+                new HeaderTerm(headerName, headerValue)
+        );
+        log.debug("Searching for header {}={} since {} (checkpoint: {})",
+                  headerName, headerValue, sinceDate, sinceEpochSec);
+        Message[] found = inbox.search(term);
+        System.out.println("Raw IMAP search returned " + (found != null ? found.length : 0) + " messages");
         return summarize(found, limit);
     }
 

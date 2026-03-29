@@ -276,35 +276,6 @@ public class InvitesController {
     }
 
     @FXML
-    public void syncAcceptMessages() {
-        // getPassword() first checks cache/keychain silently, only prompts if not found
-        String password = mainController.getPassword();
-        if (password == null) return;
-
-        mainController.showProgress(true);
-        mainController.setStatus("Syncing accept messages...");
-
-        TaskRunner.run("Syncing accepts",
-            () -> services.invites().syncAcceptMessages(password, 200),
-            new TaskRunner.TaskCallback<>() {
-                @Override
-                public void onSuccess(Integer count) {
-                    mainController.showProgress(false);
-                    mainController.setStatus("Sync complete");
-                    mainController.showInfo("Sync Complete",
-                        count + " contact(s) updated with keys from accept messages.");
-                    refresh();
-                }
-
-                @Override
-                public void onError(Throwable error) {
-                    mainController.showProgress(false);
-                    mainController.showError("Sync Error", error.getMessage());
-                }
-            });
-    }
-
-    @FXML
     public void syncSelectedAccept() {
         InviteRow selected = outgoingTable.getSelectionModel().getSelectedItem();
         if (selected == null) {

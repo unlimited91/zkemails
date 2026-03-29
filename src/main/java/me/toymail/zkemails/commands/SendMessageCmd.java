@@ -1,7 +1,5 @@
 package me.toymail.zkemails.commands;
 
-import me.toymail.zkemails.SmtpClient;
-import me.toymail.zkemails.crypto.CryptoBox;
 import me.toymail.zkemails.crypto.IdentityKeys;
 import me.toymail.zkemails.service.MessageService;
 import me.toymail.zkemails.store.Config;
@@ -133,13 +131,6 @@ public final class SendMessageCmd implements Runnable {
                 return;
             }
 
-            // Check if this is a multi-recipient send or single recipient (v1)
-            int totalRecipients = (toEmails != null ? toEmails.size() : 0) +
-                                  (ccEmails != null ? ccEmails.size() : 0) +
-                                  (bccEmails != null ? bccEmails.size() : 0);
-
-            boolean isMultiRecipient = totalRecipients > 1 || ccEmails != null || bccEmails != null;
-
             // Validate all recipients have keys
             List<String> allRecipients = new ArrayList<>();
             if (toEmails != null) allRecipients.addAll(toEmails);
@@ -157,8 +148,7 @@ public final class SendMessageCmd implements Runnable {
 
             String resolvedPassword = context.passwordResolver().resolve(password, cfg.email, System.console());
 
-            // Process attachments if any
-            List<CryptoBox.AttachmentInput> attachmentInputs = new ArrayList<>();
+            // Validate attachments if any
             if (attachments != null && !attachments.isEmpty()) {
                 for (Path path : attachments) {
                     if (!path.toFile().exists()) {
@@ -174,56 +164,26 @@ public final class SendMessageCmd implements Runnable {
                                 path.getFileName(), path.toFile().length() / 1024 / 1024);
                         return;
                     }
-                    try {
-                        attachmentInputs.add(CryptoBox.AttachmentInput.fromFile(path));
-                        log.info("Attaching: {} ({} bytes)", path.getFileName(), path.toFile().length());
-                    } catch (Exception e) {
-                        log.error("Failed to read attachment {}: {}", path, e.getMessage());
-                        return;
-                    }
+                    log.info("Attaching: {} ({} bytes)", path.getFileName(), path.toFile().length());
                 }
             }
 
-            // Send the message
-            if (isMultiRecipient) {
-                // Use v2 multi-recipient send
-                MessageService msgService = new MessageService(context);
-                MessageService.MultiRecipientInput recipients = new MessageService.MultiRecipientInput(
-                    toEmails, ccEmails, bccEmails
-                );
+            // Always use V2 format for all messages (single or multi-recipient)
+            MessageService msgService = new MessageService(context);
+            MessageService.MultiRecipientInput recipients = new MessageService.MultiRecipientInput(
+                toEmails, ccEmails, bccEmails
+            );
 
-                // Note: attachments not yet supported for multi-recipient v2 - log warning
-                if (!attachmentInputs.isEmpty()) {
-                    log.warn("Attachments with multi-recipient send not yet supported. Sending without attachments.");
-                }
+            List<Path> attachmentPaths = attachments != null ? attachments : List.of();
 
-                MessageService.MultiSendResult result = msgService.sendMultiRecipientMessage(
-                    resolvedPassword, recipients, messageSubject, messageBody, null, null, null
-                );
+            MessageService.MultiSendResult result = msgService.sendMultiRecipientMessageWithAttachments(
+                resolvedPassword, recipients, messageSubject, messageBody, attachmentPaths, null, null, null
+            );
 
-                if (result.success()) {
-                    log.info("{}", result.message());
-                } else {
-                    log.error("Failed to send: {}", result.message());
-                }
+            if (result.success()) {
+                log.info("{}", result.message());
             } else {
-                // Use v1 single-recipient send (backward compatible)
-                String singleRecipient = toEmails.get(0);
-                ContactsStore.Contact c = context.contacts().get(singleRecipient);
-
-                try (SmtpClient smtp = SmtpClient.connect(new SmtpClient.SmtpConfig(
-                        cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, resolvedPassword))) {
-                    if (attachmentInputs.isEmpty()) {
-                        smtp.sendEncryptedMessage(cfg.email, singleRecipient, messageSubject, messageBody,
-                            myKeys, c.fingerprintHex, c.x25519PublicB64);
-                    } else {
-                        smtp.sendEncryptedMessageWithAttachments(cfg.email, singleRecipient, messageSubject, messageBody,
-                            attachmentInputs, myKeys, c.fingerprintHex, c.x25519PublicB64, null, null, null);
-                    }
-                }
-
-                String attachmentInfo = attachmentInputs.isEmpty() ? "" : " with " + attachmentInputs.size() + " attachment(s)";
-                log.info("Encrypted message sent to {} (type=msg){}", singleRecipient, attachmentInfo);
+                log.error("Failed to send: {}", result.message());
             }
         } catch (Exception e) {
             log.error("send-message failed: {} - {}", e.getClass().getSimpleName(), e.getMessage());

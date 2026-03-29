@@ -80,8 +80,8 @@ public final class SmtpClient implements AutoCloseable {
                 zke (Zero Knowledge Emails) is an end-to-end encrypted email client that works on top of
                 your regular email. Read more: https://musings.sayanr.com/2025/12/26/zkmails.html
 
-                It is an open source CLI tool designed for privacy-first users who live in the terminal.
-                It does NOT talk to any remote server - all encryption happens locally.
+                It is an open source utility designed for privacy-first users. It does NOT talk to any remote server.
+                All encryption happens locally.
 
                 Note: The password for zke is NOT your Gmail password. You need to create an "App Password".
 
@@ -97,7 +97,11 @@ public final class SmtpClient implements AutoCloseable {
                 1. Install zke:
                    curl -fsSL https://raw.githubusercontent.com/unlimited91/zkemails/1.0.0.beta2/install.sh | bash
                 
-                For GUI users, just run the command "zke gui". For terminal loves follow the below steps
+                For GUI users, just run the command "zke gui". It will prompt you to enter your email and app password.
+                Navigate to the Invites section and acknowledge the invite by selecting it. The person who invited you
+                will get a Notification. Once they acknowledge, you can start chatting :)
+                
+                For CLI lovers follow the below steps
 
                 2. Initialize with your email:
                    zke init --email %s
@@ -175,164 +179,11 @@ public final class SmtpClient implements AutoCloseable {
     }
 
     /**
-     * Send an encrypted message with optional threading headers.
-     *
-     * @param inReplyTo  Message-ID of the message being replied to (null for new messages)
-     * @param references Thread reference chain (null for new messages)
-     * @param threadId   Custom thread ID for correlation (survives Gmail header stripping)
-     * @return the Message-ID of the sent message for local storage
-     */
-    public String sendEncryptedMessage(String fromEmail, String toEmail, String subject, String plaintext,
-                                     IdentityKeys.KeyBundle senderKeys,
-                                     String recipientFpHex, String recipientXPubB64,
-                                     String inReplyTo, String references, String threadId) throws Exception {
-
-        CryptoBox.EncryptedPayload p = CryptoBox.encryptToRecipient(
-                fromEmail, toEmail, subject, plaintext, senderKeys, recipientFpHex, recipientXPubB64
-        );
-
-        MimeMessage msg = new MimeMessage(session);
-        msg.setFrom(new InternetAddress(fromEmail));
-        msg.setRecipients(Message.RecipientType.TO, InternetAddress.parse(toEmail, false));
-        msg.setSubject(subject, "UTF-8");
-        msg.setSentDate(new Date());
-        msg.setText("Encrypted message (zke).", "UTF-8");
-
-        // Threading headers for replies
-        if (inReplyTo != null && !inReplyTo.isBlank()) {
-            msg.setHeader("In-Reply-To", inReplyTo);
-        }
-        if (references != null && !references.isBlank()) {
-            msg.setHeader("References", references);
-        }
-
-        // Custom thread ID header (survives Gmail header stripping)
-        if (threadId != null && !threadId.isBlank()) {
-            msg.setHeader("X-ZKEmails-Thread-Id", threadId);
-        }
-
-        msg.setHeader("X-ZKEmails-Type", "msg");
-        msg.setHeader("X-ZKEmails-Enc", "x25519+hkdf+aesgcm;sig=ed25519");
-
-        msg.setHeader("X-ZKEmails-Sender-Fp", senderKeys.fingerprintHex());
-        msg.setHeader("X-ZKEmails-Recipient-Fp", recipientFpHex);
-
-        msg.setHeader("X-ZKEmails-Ephem-X25519", p.ephemX25519PubB64());
-        msg.setHeader("X-ZKEmails-WrappedKey", p.wrappedKeyB64());
-        msg.setHeader("X-ZKEmails-WrappedKey-Nonce", p.wrappedKeyNonceB64());
-        msg.setHeader("X-ZKEmails-Nonce", p.msgNonceB64());
-        msg.setHeader("X-ZKEmails-Ciphertext", p.ciphertextB64());
-        msg.setHeader("X-ZKEmails-Sig", p.sigB64());
-
-        Transport.send(msg);
-
-        // Return the Message-ID for local storage
-        return msg.getMessageID();
-    }
-
-    /**
-     * Send an encrypted message (convenience method for new messages without threading).
-     * @return the Message-ID of the sent message for local storage
-     */
-    public String sendEncryptedMessage(String fromEmail, String toEmail, String subject, String plaintext,
-                                     IdentityKeys.KeyBundle senderKeys,
-                                     String recipientFpHex, String recipientXPubB64) throws Exception {
-        return sendEncryptedMessage(fromEmail, toEmail, subject, plaintext, senderKeys, recipientFpHex, recipientXPubB64, null, null, null);
-    }
-
-    /**
-     * Send an encrypted message with attachments.
-     * Uses MIME multipart format to include encrypted attachments.
-     *
-     * @param attachments List of files to attach (will be encrypted)
-     * @return the Message-ID of the sent message
-     */
-    public String sendEncryptedMessageWithAttachments(
-            String fromEmail, String toEmail, String subject, String plaintext,
-            List<CryptoBox.AttachmentInput> attachments,
-            IdentityKeys.KeyBundle senderKeys,
-            String recipientFpHex, String recipientXPubB64,
-            String inReplyTo, String references, String threadId) throws Exception {
-
-        // Encrypt message and attachments together
-        CryptoBox.EncryptedMessageWithAttachments encrypted = CryptoBox.encryptWithAttachments(
-                fromEmail, toEmail, subject, plaintext, attachments,
-                senderKeys, recipientFpHex, recipientXPubB64
-        );
-
-        CryptoBox.EncryptedPayload p = encrypted.textPayload();
-
-        MimeMessage msg = new MimeMessage(session);
-        msg.setFrom(new InternetAddress(fromEmail));
-        msg.setRecipients(Message.RecipientType.TO, InternetAddress.parse(toEmail, false));
-        msg.setSubject(subject, "UTF-8");
-        msg.setSentDate(new Date());
-
-        // Create multipart content
-        MimeMultipart multipart = new MimeMultipart("mixed");
-
-        // Part 1: Text body
-        MimeBodyPart textPart = new MimeBodyPart();
-        textPart.setText("Encrypted message with attachments (zke).", "UTF-8");
-        multipart.addBodyPart(textPart);
-
-        // Part 2: Encrypted attachments as JSON
-        if (encrypted.attachments() != null && !encrypted.attachments().isEmpty()) {
-            MimeBodyPart attachmentPart = new MimeBodyPart();
-            ObjectMapper mapper = new ObjectMapper();
-
-            // Create attachment container with version for future compatibility
-            var container = new AttachmentContainer(1, encrypted.attachments());
-            String json = mapper.writeValueAsString(container);
-
-            // Use DataHandler for proper MIME encoding
-            attachmentPart.setDataHandler(new jakarta.activation.DataHandler(
-                    json, "application/json; charset=UTF-8"));
-            attachmentPart.setFileName("attachments.zke");
-            attachmentPart.setDisposition(MimeBodyPart.ATTACHMENT);
-            multipart.addBodyPart(attachmentPart);
-        }
-
-        msg.setContent(multipart);
-
-        // Threading headers
-        if (inReplyTo != null && !inReplyTo.isBlank()) {
-            msg.setHeader("In-Reply-To", inReplyTo);
-        }
-        if (references != null && !references.isBlank()) {
-            msg.setHeader("References", references);
-        }
-        if (threadId != null && !threadId.isBlank()) {
-            msg.setHeader("X-ZKEmails-Thread-Id", threadId);
-        }
-
-        // ZKE encryption headers
-        msg.setHeader("X-ZKEmails-Type", "msg");
-        msg.setHeader("X-ZKEmails-Enc", "x25519+hkdf+aesgcm;sig=ed25519");
-        msg.setHeader("X-ZKEmails-Has-Attachments", String.valueOf(encrypted.attachments().size()));
-
-        msg.setHeader("X-ZKEmails-Sender-Fp", senderKeys.fingerprintHex());
-        msg.setHeader("X-ZKEmails-Recipient-Fp", recipientFpHex);
-
-        msg.setHeader("X-ZKEmails-Ephem-X25519", p.ephemX25519PubB64());
-        msg.setHeader("X-ZKEmails-WrappedKey", p.wrappedKeyB64());
-        msg.setHeader("X-ZKEmails-WrappedKey-Nonce", p.wrappedKeyNonceB64());
-        msg.setHeader("X-ZKEmails-Nonce", p.msgNonceB64());
-        msg.setHeader("X-ZKEmails-Ciphertext", p.ciphertextB64());
-        msg.setHeader("X-ZKEmails-Sig", p.sigB64());
-
-        // Save changes to ensure multipart boundaries are set in headers
-        msg.saveChanges();
-        Transport.send(msg);
-        return msg.getMessageID();
-    }
-
-    /**
      * Container for encrypted attachments in JSON format.
      */
     public record AttachmentContainer(int version, List<CryptoBox.EncryptedAttachment> attachments) {}
 
-    // ==================== V2 Multi-Recipient Sending ====================
+    // ==================== V2 Message Sending ====================
 
     /**
      * Send an encrypted v2 message to multiple To/CC recipients.
@@ -423,6 +274,117 @@ public final class SmtpClient implements AutoCloseable {
         msg.setHeader("X-ZKEmails-Version", "2");
         msg.setHeader("X-ZKEmails-Enc", payload.enc());
         msg.setHeader("X-ZKEmails-Sender-Fp", payload.senderFpHex());
+
+        msg.saveChanges();
+        Transport.send(msg);
+        return msg.getMessageID();
+    }
+
+    /**
+     * Send an encrypted v2 message with attachments to multiple To/CC recipients.
+     * Uses MIME multipart with JSON payload and attachments.
+     *
+     * @param fromEmail sender email
+     * @param toEmails list of To recipients
+     * @param ccEmails list of CC recipients (can be null or empty)
+     * @param subject email subject
+     * @param encryptedMessage the v2 encrypted message with attachments
+     * @param inReplyTo Message-ID of message being replied to (null for new)
+     * @param references thread reference chain (null for new)
+     * @param threadId custom thread ID for correlation
+     * @return the Message-ID of the sent message
+     */
+    public String sendEncryptedMultiRecipientMessageWithAttachments(
+            String fromEmail,
+            List<String> toEmails,
+            List<String> ccEmails,
+            String subject,
+            CryptoBox.EncryptedMessageWithAttachmentsV2 encryptedMessage,
+            String inReplyTo, String references, String threadId) throws Exception {
+
+        if (toEmails == null || toEmails.isEmpty()) {
+            throw new IllegalArgumentException("At least one To recipient required");
+        }
+
+        CryptoBox.EncryptedPayloadV2 payload = encryptedMessage.textPayload();
+
+        MimeMessage msg = new MimeMessage(session);
+        msg.setFrom(new InternetAddress(fromEmail));
+
+        // Add To recipients
+        InternetAddress[] toAddresses = toEmails.stream()
+                .map(email -> {
+                    try { return new InternetAddress(email); }
+                    catch (Exception e) { throw new RuntimeException(e); }
+                })
+                .toArray(InternetAddress[]::new);
+        msg.setRecipients(Message.RecipientType.TO, toAddresses);
+
+        // Add CC recipients
+        if (ccEmails != null && !ccEmails.isEmpty()) {
+            InternetAddress[] ccAddresses = ccEmails.stream()
+                    .map(email -> {
+                        try { return new InternetAddress(email); }
+                        catch (Exception e) { throw new RuntimeException(e); }
+                    })
+                    .toArray(InternetAddress[]::new);
+            msg.setRecipients(Message.RecipientType.CC, ccAddresses);
+        }
+
+        msg.setSubject(subject, "UTF-8");
+        msg.setSentDate(new Date());
+
+        // Create multipart content with JSON payload
+        MimeMultipart multipart = new MimeMultipart("mixed");
+
+        // Part 1: Placeholder text body
+        MimeBodyPart textPart = new MimeBodyPart();
+        textPart.setText("Encrypted message with attachments (zke v2).", "UTF-8");
+        multipart.addBodyPart(textPart);
+
+        // Part 2: Encrypted payload as JSON attachment
+        MimeBodyPart payloadPart = new MimeBodyPart();
+        ObjectMapper mapper = new ObjectMapper();
+        String payloadJson = mapper.writeValueAsString(payload);
+
+        payloadPart.setDataHandler(new jakarta.activation.DataHandler(
+                payloadJson, "application/json; charset=UTF-8"));
+        payloadPart.setFileName("zkemails-payload.json");
+        payloadPart.setDisposition(MimeBodyPart.ATTACHMENT);
+        multipart.addBodyPart(payloadPart);
+
+        // Part 3: Encrypted attachments as JSON
+        if (encryptedMessage.attachments() != null && !encryptedMessage.attachments().isEmpty()) {
+            MimeBodyPart attachmentPart = new MimeBodyPart();
+            var container = new AttachmentContainer(1, encryptedMessage.attachments());
+            String attachmentsJson = mapper.writeValueAsString(container);
+
+            attachmentPart.setDataHandler(new jakarta.activation.DataHandler(
+                    attachmentsJson, "application/json; charset=UTF-8"));
+            attachmentPart.setFileName("attachments.zke");
+            attachmentPart.setDisposition(MimeBodyPart.ATTACHMENT);
+            multipart.addBodyPart(attachmentPart);
+        }
+
+        msg.setContent(multipart);
+
+        // Threading headers
+        if (inReplyTo != null && !inReplyTo.isBlank()) {
+            msg.setHeader("In-Reply-To", inReplyTo);
+        }
+        if (references != null && !references.isBlank()) {
+            msg.setHeader("References", references);
+        }
+        if (threadId != null && !threadId.isBlank()) {
+            msg.setHeader("X-ZKEmails-Thread-Id", threadId);
+        }
+
+        // V2 message headers
+        msg.setHeader("X-ZKEmails-Type", "msg");
+        msg.setHeader("X-ZKEmails-Version", "2");
+        msg.setHeader("X-ZKEmails-Enc", payload.enc());
+        msg.setHeader("X-ZKEmails-Sender-Fp", payload.senderFpHex());
+        msg.setHeader("X-ZKEmails-Has-Attachments", String.valueOf(encryptedMessage.attachments().size()));
 
         msg.saveChanges();
         Transport.send(msg);
